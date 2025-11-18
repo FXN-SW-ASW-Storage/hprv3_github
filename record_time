@@ -1,0 +1,59 @@
+#!/bin/bash
+
+source ../commonlib
+
+record_time()
+{
+	station=$1 # The testing station
+        function=$2 # The function name to run , like initial / start ...etc.
+        testStr=$3
+	criteria=$4       # The test stage name
+        test_result=$5 # The test result pass or fail
+	rackSN=$6   # The sled SN
+	
+	TestName=$(echo $testStr | awk -F ';' '{print$1}')
+	registerName=$(echo $testStr | awk -F ';' '{print$2}')
+
+        case $function in
+        "initial")
+                rm -rf ${LOGPATH}/${rackSN}/summary_table_${station}.conf
+        ;;
+        "start")
+                start_time=`date +'%F %T'`
+		export start_time
+		printf "%-10s ,  %-30s , %-20s , %-15s , %-20s, %-10s\n" "$start_time" "${TestName}" "${registerName}" "${criteria}" " " "Running" >> ${LOGPATH}/${rackSN}/summary_table_${station}.conf
+                #printf "%-20s ,  %-15s , %-30s , %-11s\n" "$start_time" " " "$testitem" "Running" >> ${LOGFILE}/summary_table_${stage}.conf
+        ;;
+        "end")
+                end_time=`date +'%F %T'`
+                time1=`date +%s -d "${start_time}"`
+                time2=`date +%s -d "${end_time}"`
+                minus=$(($time2 - $time1))
+                abs=${minus#-}
+                sed -i '$d' ${LOGPATH}/${rackSN}/summary_table_${station}.conf
+                printf "%-10s ,  %-30s , %-20s , %-15s , %-20s, %-10s\n" "$start_time" "${TestName}" "${registerName}" "${criteria}" "${abs}" "${test_result}" >> ${LOGPATH}/${rackSN}/summary_table_${station}.conf
+                #printf "%-20s ,  %-15s , %-30s , %-11s\n" "$start_time" "$abs" "$module_name" "$test_result" >> ${LOGFILE}/summary_table_${stage}.conf
+        ;;
+        "total")
+                total_time=0
+                end_time=`date +'%F %T'`
+                while read LINE
+                do
+                        run_time=`echo $LINE | awk -F ',' '{print $5}'`
+                        let total_time=total_time+run_time
+                done < ${LOGPATH}/${rackSN}/summary_table_${station}.conf
+                printf "%-10s ,  %-30s , %-20s , %-15s , %-20s, %-10s\n" "$end_time" "${TestName}" "All" "All" "${total_time}" "${test_result}" >> ${LOGPATH}/${rackSN}/summary_table_${station}.conf
+                #printf "%-20s ,  %-15s , %-30s , %-11s\n" "$end_time" "${total_time}" "Total Test Time" "$test_result" >> ${LOGFILE}/summary_table_${stage}.conf
+        ;;
+        "show")
+		printf "%-10s ,  %-30s , %-20s , %-15s , %-20s, %-10s\n" "Test_Start" "Test_item" "Register_Name" "Criteria" "Spent_Seconds" "Status" 
+                #printf "%-20s ,  %-15s , %-30s , %-11s\n" "Test_Start" "Spent_Seconds" "Test_Item" "Status"
+                cat ${LOGPATH}/${rackSN}/summary_table_${station}.conf
+        ;;
+        *)
+                echo "Can not find correct item in record_time funciton"
+                return 1
+        ;;
+        esac
+}
+

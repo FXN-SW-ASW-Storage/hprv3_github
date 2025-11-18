@@ -1,0 +1,1282 @@
+#!/bin/bash
+#File: shell functions
+#Auther: 
+RELEASE_DATE="10/22/2024"
+RELEASE_VERSION="1.0"
+
+TESTPATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+export FOXCONN=$TESTPATH
+export INIPATH="$FOXCONN/ini"
+export LINUXMODULE="$FOXCONN/linux_module"
+export LOGPATH="$FOXCONN/log"
+export TOOL=$FOXCONN/LinuxTools
+export IPMITOOL=ipmitool
+export WG400BMCPATH=${TOOL}/WEDGE400_BMCFW
+export PORTFILE=${TOOL}/MP3_LANE_MAPPING
+export CFGPATH="$FOXCONN/cfg"
+defaultPassword="0penBmc"
+export NSFRack=("15-103198" "15-103199" "15-103196" "15-103197")
+export DSFRack=("15-103200" "15-103201" "15-103202" "15-103203")
+
+. /home/station.cfg
+[ -z $sel_sku ] &&  export sel_sku=`cat $FOXCONN/flg/sku.flg 2>/dev/null`
+
+if [ ${MFG} == "GDL" ];then
+    export stage="L11-FT"
+    export DB_USER=root
+    export DB_PSW=123456
+    export DB_HOST=192.168.0.1
+    export DB_NAME=TBD
+fi
+update_status()
+{
+    RACK_SN=$1
+    folder=$2
+    index=$3
+    testitem=$4
+    teststep=$5
+    teststatus=$6   
+    LOGFOLDER="${LOGPATH}/${RACK_SN}"
+    echo "${testitem}" > ${LOGFOLDER}/${folder}/${index}/run_stage
+    if [ ! -z "${teststep}" ];then
+        echo "${teststep}" > ${LOGFOLDER}/${folder}/${index}/run_step
+    fi
+    case "${teststatus}" in
+    "1")
+        echo "Running" > ${LOGFOLDER}/${folder}/${index}/run_status
+        ;;
+    "2")
+        echo "PASS" > ${LOGFOLDER}/${folder}/${index}/run_status
+        ;;
+    "3")
+        echo "FAIL" > ${LOGFOLDER}/${folder}/${index}/run_status
+        ;;
+    "4")
+        echo "Re-Try" > ${LOGFOLDER}/${folder}/${index}/run_status
+        ;;
+    *)
+        echo "Unknown" > ${LOGFOLDER}/${folder}/${index}/run_status
+        ;;
+    esac 
+}
+
+executeCOMeShell()
+{
+    echo "Execute DiagBMCOS Command of Minipack2"
+    #/usr/bin/python3 TorScriptExecution.py "Minipack2" "${wedge400Dev}" "DiagOS" "0" "NA" "rpm -qa |grep Diag"
+    #cat ./log/Execution_console.log >> ${LOGFILE}
+    defaultPassword="0penBmc"
+    user="root"
+    password="11"
+    cmd=$1
+    sw_ip=$2
+/usr/bin/expect << EOF 
+    spawn sshpass -p ${defaultPassword} ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR root@${sw_ip}
+    send "sol.sh\r"
+    while 1 {
+        set timeout 600
+        expect {
+        "fb971c12 login" {
+            send "${user}\r"
+            sleep 1
+            send "${password}\r"
+            sleep 5
+            continue
+        }
+        "Password" {
+            send "${password}\r"
+            sleep 0.5
+        }
+        "root@fb971c12 SDK" {
+            puts "./auto_load_user.sh"
+            sleep 2
+            send "./auto_load_user.sh\r"
+            sleep 10
+            continue
+        }
+        "root@fb971c12 bin" {
+            puts "cd /usr/local/cls_diag/SDK"
+            sleep 2
+            send "cd /usr/local/cls_diag/SDK\r"
+            sleep 1
+            continue
+        }
+        "root@fb971c12 ~" {
+            puts "cd /usr/local/cls_diag/SDK"
+            sleep 2
+            send "cd /usr/local/cls_diag/SDK\r"
+            sleep 1
+            continue
+        }
+        "BCM.0>" {
+            puts "shell"
+            sleep 2
+            send "shell\r"
+            sleep 2
+            continue
+        }
+        "bash-4.4#" {
+            puts "Run1 ${cmd}"
+            sleep 2
+            send "${cmd}\r"
+            sleep 2
+            break
+        }
+        "Control-C" {
+            send "\r"
+            sleep 2
+            continue
+        }
+        "Interrupt:SIGINT" {
+            send "\r"
+            sleep 2
+            continue
+        }
+        "CTRL-l + b : Send Break" {
+            puts "Send Ctrl+C"
+            sleep 2
+            send "\x03\r"
+            sleep 3
+        }
+        timeout {
+            puts "Timeout 30s.Exit"
+            exit
+        }
+        sleep 2
+        }
+    }
+    set timeout 30
+    while 1 {
+        send "\r"
+        expect {
+        "bash-4.4#" {
+            puts "command finish."
+            sleep 1
+            exit
+        }
+        timeout {
+            puts "Timeout 30s.Exit"
+            exit
+        }
+        }
+        sleep 5
+    }
+    sleep 2
+EOF
+}
+
+exeucte_test()
+{
+    executeCMD=$1
+    switchIP=$2
+    echo "command : sshpass -p ${defaultPassword} ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR root@${switchIP} \"${executeCMD}\""
+    sshpass -p ${defaultPassword} ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR root@${switchIP} "${executeCMD}"
+    if [ ${PIPESTATUS[0]} -ne 0 ];then
+        echo "The command \"sshpass -p 0penBmc ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR root@${switchIP} \"${executeCMD}\" can't execute, stop the test"
+        return 1
+    else
+        echo "The command \"sshpass -p 0penBmc ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR root@${switchIP} \"${executeCMD}\" can be execute"
+    fi
+    
+}
+
+executeCMDinOS()
+{
+    echo "Execute DiagOS Command of Minipack3"
+    defaultPassword="0penBmc"
+    user="root"
+    password="11"
+    cmd=$1
+    sw_ip=$2
+/usr/bin/expect << EOF
+    spawn sshpass -p ${defaultPassword} ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR root@${sw_ip}
+    send "sol.sh\r"
+    set timeout 60
+    while 1 {
+        expect {
+        "Password" {
+            send "$password\r"
+            sleep 5
+            continue
+        }
+        "localhost login: " {
+            send "${user}\r"
+            sleep 1
+            send "${password}\r"
+            sleep 5
+            continue
+        }
+        "fb971c12 login" {
+            send "${user}\r"
+            sleep 1
+            send "${password}\r"
+            sleep 5
+            continue
+        }
+        "root@fb971c12" {
+            puts "run ${cmd}"
+            sleep 2
+            send "${cmd}\r"
+            sleep 2
+            break
+        }
+	    "minipack3" {
+            puts "run ${secondCMD}"
+	        send "${secondCMD}\r"
+            sleep 60
+            send "q\r"
+            send "q\r"
+            send "q\r"
+            send "q\r"
+            break
+	    }
+	    "\>\>\>" {
+            puts "run ${secondCMD}"
+            send "${secondCMD}\r"
+            sleep 60
+            send "q\r"
+            send "q\r"
+            send "q\r"
+            send "q\r"
+            break
+        }  
+        "root@localhost" {
+            puts "run ${cmd}"
+            sleep 10
+            send "${cmd}\r"
+            sleep 120
+            break
+        }
+        "BCM.0>" {
+	    puts "run ${secondCMD}"
+            sleep 10    
+            send "${secondCMD}\r"
+            sleep 60	
+            break
+        }
+        "bash-4.4#" {
+            puts "exit COMeShell"
+            send "exit\r"
+            sleep 2
+            continue
+        }
+        "Control-C" {
+            send "\r"
+            sleep 2
+            continue
+        }
+        "Interrupt:SIGINT" {
+            send "\r"
+            sleep 2
+            continue
+        }
+        "CTRL-l + b : Send Break" {
+            puts "Send Ctrl+C"
+            sleep 2
+            send "\x03\r"
+            sleep 2
+        }
+        timeout {
+            puts "Timeout 300s.Exit"
+            exit
+        }
+        sleep 2
+        }
+    }
+    set timeout 600
+    sleep 3
+    while 1 {
+        send "\r"
+        expect {
+            "root@fb971c12" {
+                puts "command finish."
+                sleep 1
+                exit
+            }
+            "root@localhost" {
+                puts "command finish."
+                sleep 1
+                exit
+            }
+            timeout {
+                puts "Timeout 300s.Exit"
+                exit
+            }
+        }
+        sleep 5
+    }
+EOF
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+executeCMDinDiagOS()
+{
+    echo "Execute DiagOS Command of Minipack3"
+    defaultPassword="0penBmc"
+    user="root"
+    password="11"
+    cmd=$1
+    sw_ip=$2
+    secondCMD=$3
+/usr/bin/expect << EOF
+    spawn sshpass -p ${defaultPassword} ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR root@${sw_ip}
+    send "sol.sh\r"
+    set timeout 60
+    while 1 {
+        expect {
+        "Password" {
+            send "$password\r"
+            sleep 5
+            continue
+        }
+        "localhost login" {
+        send "${user}\r"
+            sleep 1
+            send "${password}\r"
+            sleep 5
+            continue
+        }
+        "fb971c12 login" {
+            send "${user}\r"
+            sleep 1
+            send "${password}\r"
+            sleep 5
+            continue
+        }
+        "root@fb971c12" {
+            puts "run ${cmd}"
+            sleep 2
+            send "${cmd}\r"
+            sleep 2
+            break
+        }
+	    "minipack3" {
+            puts "run ${secondCMD}"
+	        send "${secondCMD}\r"
+            sleep 60
+            send "q\r"
+            send "q\r"
+            send "q\r"
+            send "q\r"
+            break
+	    }
+	    "\>\>\>" {
+            puts "run ${secondCMD}"
+            send "${secondCMD}\r"
+            sleep 60
+            send "q\r"
+            send "q\r"
+            send "q\r"
+            send "q\r"
+            break
+        }  
+        "root@localhost" {
+            puts "run ${cmd}"
+            sleep 10
+            send "${cmd}\r"
+            sleep 15
+            continue
+        }
+        "BCM.0>" {
+	        puts "run ${secondCMD}"
+            sleep 10    
+            send "${secondCMD}\r"
+            sleep 60	
+            break
+        }
+        "bash-4.4#" {
+            puts "exit COMeShell"
+            send "exit\r"
+            sleep 2
+            continue
+        }
+        "Control-C" {
+            send "\r"
+            sleep 2
+            continue
+        }
+        "Interrupt:SIGINT" {
+            send "\r"
+            sleep 2
+            continue
+        }
+        "CTRL-l + b : Send Break" {
+            puts "Send Ctrl+C"
+            sleep 2
+            send "\x03\r"
+            sleep 2
+        }
+        timeout {
+            puts "Timeout 300s.Exit"
+            exit
+        }
+        sleep 2
+        }
+    }
+    set timeout 600
+    sleep 3
+    while 1 {
+        send "\r"
+        expect {
+            "root@fb971c12" {
+                puts "command finish."
+                sleep 1
+                exit
+            }
+            "root@localhost" {
+                puts "command finish."
+                sleep 1
+                exit
+            }
+            timeout {
+                puts "Timeout 300s.Exit"
+                exit
+            }
+        }
+        sleep 5
+    }
+EOF
+}
+
+executeCMDinDiagBMCOS()
+{
+    echo "Execute DiagOS Command of Minipack3"
+    defaultPassword="0penBmc"
+    user="root"
+    password="11"
+    cmd=$1
+    sw_ip=$2
+    secondCMD=$3
+/usr/bin/expect << EOF
+    spawn sshpass -p ${defaultPassword} ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR root@${sw_ip}
+    send "sol.sh\r"
+    set timeout 60
+    while 1 {
+        expect {
+        "Password" {
+            send "$password\r"
+            sleep 5
+            continue
+        }
+        "localhost login" {
+        send "${user}\r"
+            sleep 1
+            send "${password}\r"
+            sleep 5
+            continue
+        }
+        "fb971c12 login" {
+            send "${user}\r"
+            sleep 1
+            send "${password}\r"
+            sleep 5
+            continue
+        }
+        "root@fb971c12" {
+            puts "run ${cmd}"
+            sleep 2
+            send "${cmd}\r"
+            sleep 2
+            break
+        }
+	"minipack3" {
+            puts "run ${secondCMD}"
+	    send "${secondCMD}\r"
+            sleep 60
+	    send "q\r"
+	    send "q\r"
+	    send "q\r"
+	    send "q\r"
+	    break
+
+	}
+	"\>\>\>" {
+            puts "run ${secondCMD}"
+            send "${secondCMD}\r"
+            sleep 60
+            send "q\r"
+            send "q\r"
+            send "q\r"
+            send "q\r"
+            break
+
+        }  
+        "root@localhost" {
+        puts "run ${cmd}"
+            sleep 10
+            send "${cmd}\r"
+            sleep 15
+            break
+        }
+        "BCM.0>" {
+	    puts "run ${secondCMD}"
+            sleep 10    
+            send "${secondCMD}\r"
+            sleep 60	
+            break
+        }
+        "Control-C" {
+            send "\r"
+            sleep 2
+            continue
+        }
+        "Interrupt:SIGINT" {
+	send "\r"
+            sleep 2
+            continue
+        }
+        "CTRL-l + b : Send Break" {
+            puts "Send Ctrl+C"
+            sleep 2
+            send "\x03\r"
+            sleep 2
+        }
+        timeout {
+            puts "Timeout 300s.Exit"
+            exit
+        }
+        sleep 2
+        }
+    }
+    set timeout 600
+    sleep 3
+    while 1 {
+        send "\r"
+        expect {
+            "root@fb971c12" {
+                puts "command finish."
+                sleep 1
+                exit
+            }
+            "root@localhost" {
+                puts "command finish."
+                sleep 1
+                exit
+            }
+            timeout {
+                puts "Timeout 300s.Exit"
+                exit
+            }
+        }
+        sleep 5
+    }
+EOF
+}
+
+pingAction()
+{
+    targetIP=$1
+    ping -c 5 ${targetIP}
+    if [ ${PIPESTATUS[0]} -eq 0 ];then
+        echo "The target IP ${targetIP} can accessable, continue the test"
+    else
+        echo "The target IP ${targetIP} can not accessable, please check the configuration and restart the test"
+        return 1
+    fi
+}
+
+ping_test()
+{
+    ping -c 3 ${1}
+    if [ "${?}" -ne "0" ];then
+        return 1
+    else
+        return 0
+    fi
+}
+
+
+chk_sw_ip()
+{
+    if [ ! -f "${LOGFOLDER}/${folder}/${index}/mac_ip.txt" ];then
+        show_fail_msg "Check IP file log/${folder}/${index}\mac_ip.txt"
+        echo "Please run \"./chk_fsw_ip.sh -s Rack_SN -i switch_index\" to create IP file first."
+        return 1
+    fi
+    sw_ip=`cat ${LOGFOLDER}/${folder}/${index}/mac_ip.txt`
+    if [ ! -z "${sw_ip}" ];then
+        ping_test ${sw_ip}
+        return $?
+    else
+        show_fail_msg "IP is NULL of log/${folder}/${index}\mac_ip.txt file."
+        echo "Please run \"./chk_fsw_ip.sh -s Rack_SN -i switch_index\" to create IP file first."
+        return 1
+    fi
+}
+
+print_help(){
+
+    cat <<EOF
+    Usage: $(basename $0) -s RACK_SN [OPTION]
+        s : Rack serial Number.
+    [OPTION]:
+        i : swtich index. 1-8 for FSW.
+    Example: $(basename $0) -s GB123456789 [ -i 1 ]
+EOF
+}
+
+
+get_ip_from_dhcp(){
+    test_ip=`arp -n | grep -i ${1} | cut -d' ' -f1`
+    #echo "ip=${ip}"
+    if [ "${#ip}" -eq "0" ];then
+        dhcpd_leases_file="/var/lib/dhcpd/dhcpd.leases"
+        test_ip=`cat $dhcpd_leases_file | grep -i "${1}" -B 8 | awk '/lease / {print $2}'| tail -n1`
+        #echo "ip=${ip}"
+    fi
+    if [ "${test_ip}" == "0.0.0.0" ] || [ "${test_ip}" == "" ];then
+        show_fail_msg "Get IP by arp and dhcpd.leases"
+        echo "IP is null or 0.0.0.0"
+        return 1
+    else
+        export test_ip
+        return 0
+    fi
+}
+
+convert_error_code(){
+
+   mod_name=$1
+   error_code=${mod_name^^}
+
+}
+
+chk_station_cfg()
+{
+    if [ ! -f "/home/station.cfg" ];then
+        echo "Please create /home/station.cfg file with MFG=XXX message to identify the MFG site."
+        show_fail_msg "Check /home/station.cfg file"
+        return 1
+    fi
+    MFG=`cat /home/station.cfg | grep MFG | awk -F '=' '{print $2}'`
+    if [ -z "$MFG" ];then
+        echo "cat /home/station.cfg"
+        cat /home/station.cfg
+        show_fail_msg "Get MFG=XXX string in /home/station.cfg"
+        return 1
+    #elif [ "${MFG}" == "FHU" ] ;then
+    #    MFG="HUN"
+    fi
+    return 0
+}
+
+check_sn(){
+    SN=$(echo ${1} | tr [a-z] [A-Z])
+    length=$(echo ${#SN})
+    if [ ${length} != "11" ]; then
+    	echo "Wrong SN length, Expect: 11, Current: ${length}, Stop the test."
+        exit 1
+    fi
+    export SN=${SN}
+    if [ ! -d "${LOGPATH}/${SN}" ];then
+        mkdir -p ${LOGPATH}/${SN}
+    fi
+    echo "$SN" > ${LOGPATH}/${SN}/SN.txt
+}
+
+check_bmcip(){
+    if [ -z "$1" ];then
+	echo "Please run \"./get_bmcip.sh -s ${SN}\" to get BMC IP first. Stop the test."
+	exit 1
+    else
+	echo "BMC IP: ${1} , start to ping."
+	ping -c 3 ${1}
+	if [ "$?" -ne "0" ];then
+		show_fail_msg "Ping BMC IP"
+		echo "Please run \"./get_bmcip.sh -s ${SN}\" to check BMC IP first. Stop the test."
+		return 1
+	else
+		return 0
+	fi
+    fi
+}
+
+show_title_msg()
+{
+        _TEXT=$1
+        echo -ne "\e[1;33m*********************************\n"
+        echo -ne "\e[1;33mTest_Item: $_TEXT \n"
+        echo -ne "\e[1;33m*********************************\033[0m \n"
+        local START=$(date)
+        echo "TIME START: "${START}
+}
+
+show_end_msg()
+{
+        sec_start=$(date -d "$START" +%s)
+        END=$(date)
+        sec_end=$(date -d "$END" +%s)
+        echo "TIME END: "${END}
+        echo -ne "\e[1;33m*********************************\033[0m \n"
+        ELAPSED_TIME=$(( ${sec_end} - ${sec_start} ))
+        echo "$(($ELAPSED_TIME/3600)) hr $((($ELAPSED_TIME%3600)/60)) min $(($ELAPSED_TIME%60)) sec"
+}
+
+
+######################################################################
+#                                                                    #
+# Show Pass message (color: green)                                   #
+#                                                                    #
+######################################################################
+show_pass_msg()
+
+{
+    _TEXT=$@
+    len=${#_TEXT}
+    #echo $len
+
+    while [ $len -lt 60 ]
+    do
+    _TEXT=$_TEXT"-"
+    len=${#_TEXT}
+    done
+
+    _TEXT=$_TEXT"[ PASS ]"
+
+    echo -ne "\033[32m"
+    echo -e  "\t"$_TEXT
+    echo -ne "\033[0m"
+}
+
+
+show_warn_msg() {
+    _TEXT=$@
+    len=${#_TEXT}
+    while [ $len -lt 80 ]
+    do
+        _TEXT=$_TEXT"-"
+        len=${#_TEXT}
+    done
+    _TEXT=$_TEXT"[ warn ]"
+    echo -ne "\033[33m"
+    echo -e "[$(date "+%F %H:%M:%S")] $_TEXT "
+    echo -ne "\033[0m"
+    #echo "TIME END: $(date)"
+}
+
+######################################################################
+#                                                                    #
+# Show Fail message (color: red)                                     #
+#                                                                    #
+######################################################################
+show_fail_msg()
+{
+    _TEXT=$@
+    len=${#_TEXT}
+
+    while [ $len -lt 60 ]
+    do
+    _TEXT=$_TEXT"-"
+    len=${#_TEXT}
+    done
+
+    _TEXT=$_TEXT"[ FAIL ]"
+
+    echo -ne "\033[31m"
+    echo -e "\t"$_TEXT
+    echo -ne "\033[0m"
+    tput sgr0
+}
+
+
+######################################################################
+#                                                                    #
+# Show error message (color: red)                                    #
+#                                                                    #
+######################################################################
+show_error_message()
+{
+	touch $LOGFILE/$1
+	echo "$1" >$LOGFILE/$1
+	TEXT=$2
+	echo -ne "\033[31m$TEXT\033[0m"
+	echo
+	exit 1
+}
+
+
+
+
+######################################################################
+##                                                                    #
+## Show Pass message (color: green)                                   #
+##                                                                    #
+#######################################################################
+show_pass_message()
+{       
+    tput bold   
+    TEXT=$1
+    echo -ne "\033[32m$TEXT\033[0m"
+    echo
+    tput sgr0
+}
+
+
+######################################################################
+#                                                                    #
+# Show Fail message (color: red)                                     #
+#                                                                    #
+######################################################################
+show_fail_message()
+{ 
+     tput bold
+     TEXT=$1
+#     echo -ne "\033[5;31m$TEXT\033[0m"
+     echo -ne "\033[31m$TEXT\033[0m"
+     echo
+    tput sgr0
+}
+
+
+
+#####################################################################
+#                                                                   #
+# Show Test Item Color                                              #
+#                                                                   #
+#####################################################################
+show_item_color()
+{
+	ITEM=$1
+	ITEMINFO=$2
+	echo -ne "[\033[35m$ITEM\033[0m] \033[36m$ITEMINFO\033[0m"
+	echo
+}
+
+#####################################################################
+#                                                                   #
+# Clear BMC SEL log                                                 #
+#                                                                   #
+#####################################################################
+clear_sel_log()
+{
+	service ipmi start > /dev/null
+	ipmitool sel clear > /dev/null
+	service ipmi stop > /dev/null
+}
+
+#####################################################################
+#                                                                   #
+# Clear test log file                                               #
+#                                                                   #
+#####################################################################
+clear_log()
+{
+	if [ -d $LOGFILE ];then
+		cd $LOGFILE
+		rm -rf *
+	fi
+
+	if [ -d $LSSDT/log/ ];then
+		cd $LSSDT/log/
+		rm -rf *
+	fi
+	if [ -d $DIAGCAPTOR/log/ ];then
+		cd $DIAGCAPTOR/log/
+		rm -rf *
+	fi
+}
+
+#####################################################################
+#                                                                   #
+# Show shutdown count down                                          #
+#                                                                   #
+#####################################################################
+shutdown_info()
+{
+	i=30
+	while [ $i -ge 0 ]
+	do
+		echo -en "\r\033[33m 			Now please wait for\033[0m \033[35m${i}\033[0m \033[33mseconds to shutdown\033[0m"
+		sleep 1
+		let i-=1
+	done
+	poweroff
+}
+
+#####################################################################
+#                                                                   #
+# Show Reboot count down                                          #
+#                                                                   #
+#####################################################################
+reboot_info()
+{
+	i=30
+	while [ $i -ge 0 ]
+	do
+		echo -en "\r\033[33m 			Now please wait for\033[0m \033[35m${i}\033[0m \033[33mseconds to reboot\033[0m"
+		sleep 1
+		let i-=1
+	done
+	reboot
+}
+
+
+show_testing_msg()
+{
+	until [ -z "$1" ]
+	do
+		echo -ne "\033[1;34m$1\033[0m"
+		echo -n " "
+		shift
+	done
+	echo    
+	tput sgr0
+}
+
+
+
+#################################################################################################
+#                                                                                               #
+# Show pass screen                                                                              #
+#                                                                                               #
+#################################################################################################
+show_pass()
+{
+#	clear
+#	echo
+#	echo
+#	echo
+#	echo
+#	echo
+#	echo
+#	echo
+	echo
+	echo	
+	echo	
+	show_pass_message " 			XXXXXXX     XXXX     XXXXXX    XXXXXX"
+	show_pass_message " 			XXXXXXXX   XXXXXX   XXXXXXXX  XXXXXXXX"
+	show_pass_message " 			XX    XX  XX    XX  XX     X  XX     X"
+	show_pass_message " 			XX    XX  XX    XX   XXX       XXX"
+	show_pass_message " 			XXXXXXXX  XXXXXXXX    XXXX      XXXX"
+	show_pass_message " 			XXXXXXX   XXXXXXXX      XXX       XXX"
+	show_pass_message " 			XX        XX    XX  X     XX  X     XX"
+	show_pass_message " 			XX        XX    XX  XXXXXXXX  XXXXXXXX"
+	show_pass_message " 			XX        XX    XX   XXXXXX    XXXXXX"
+	echo
+	echo
+	#pkill -9 id_led.sh >/dev/null 2>&1
+	cd 	$LINUXMODULE
+	#./id_led.sh pass & 	
+}
+
+
+#################################################################################################
+#                                                                                               #
+# Show fail screen                                                                              #
+#                                                                                               #
+#################################################################################################
+show_fail()
+{
+#	clear
+#	echo 
+#	echo 
+#	echo 
+#	echo
+#	echo 
+	echo
+	echo
+	echo
+	show_fail_message " 		XXXXXXX     XXXX    XXXXXXXX  XXX"
+	show_fail_message " 		XXXXXXX     XXXX    XXXXXXXX  XXX"
+	show_fail_message " 		XXXXXXX    XXXXXX   XXXXXXXX  XXX"
+	show_fail_message " 		XX        XX    XX     XX     XXX"
+	show_fail_message " 		XX        XX    XX     XX     XXX"
+	show_fail_message " 		XXXXXXX   XXXXXXXX     XX     XXX"
+	show_fail_message " 		XXXXXXX   XXXXXXXX     XX     XXX"
+	show_fail_message " 		XX        XX    XX     XX     XXX"
+	show_fail_message " 		XX        XX    XX  XXXXXXXX  XXXXXXXX"
+	show_fail_message " 		XX        XX    XX  XXXXXXXX  XXXXXXXX"
+	echo 
+	echo 
+	echo 
+	echo
+	#pkill -9 id_led.sh >/dev/null 2>&1
+	cd 	$LINUXMODULE
+	#./id_led.sh fail & 	
+}
+
+logResultCheck()
+{
+    checkType=$1
+    keyWord=$2
+    PassKeyWord=$3
+    checkLog=$4
+    if [ ${checkType} == "ShowOnly" ];then
+        echo "Don't need to check the diagnostic result, only need to show the result"
+        cat ${checkLog} 
+    elif [ ${checkType} == "CheckResult" ];then
+        keyWordStr=$(echo ${keyWord} | awk -F ';' '{print$1}')
+        keyWordPoint=$(echo ${keyWord} | awk -F ';' '{print$2}')
+        echo "keyWordStr : ${keyWordStr}, keyWordPoint : ${keyWordPoint}"
+        echo "Command : \"cat ${checkLog} | grep "${keyWordStr}" | awk '{print$'${keyWordPoint}'}' | tr -d '\r\n'\""
+        cat ${checkLog} | tee -a ${logfile}
+        result=$(cat ${checkLog} | grep "${keyWordStr}" | awk '{print$'${keyWordPoint}'}' | tr -d '\r\n')
+        if [ ${result} == "${PassKeyWord}" ];then
+            echo "The result : ${result} is same as expect : ${PassKeyWord}"
+            return 0
+        else
+            echo "The result : ${result} is mismatch with expect : ${PassKeyWord}"
+            return 1
+        fi
+    elif [ ${checkType} == "CheckWholeResult" ];then
+        keyWordStr=$(echo ${keyWord} | awk -F ';' '{print$1}')
+        keyWordPoint=$(echo ${keyWord} | awk -F ';' '{print$2}')
+        echo "keyWordStr : ${keyWordStr}, keyWordPoint : ${keyWordPoint}"
+        echo "Command : \"cat ${checkLog} | grep "${keyWordStr}" | tr -d ' ' | awk -F ':' '{print$'${keyWordPoint}'}' | tr -d '\"' | tr -d '\r\n' "
+        cat ${checkLog} 
+        result=$(cat ${checkLog} | grep "${keyWordStr}" | awk -F ':' '{print$'${keyWordPoint}'}' | tr -d '"' | tr -d '\r\n' | tr -d ' ')
+        if [ ${result} == "${PassKeyWord}" ];then
+            echo "The result : ${result} is same as expect : ${PassKeyWord}"
+            return 0
+        else
+            echo "The result : ${result} is mismatch with expect : ${PassKeyWord}"
+            return 1
+        fi
+    elif [ ${checkType} == "CheckEGREPValue" ];then
+        keyWordPoint=$(echo ${PassKeyWord} | awk -F ';' '{print$1}')
+	    keyWordGolden=$(echo ${PassKeyWord} | awk -F ';' '{print$2}')
+        echo "Command : \"cat ${checkLog} | grep "${keyWord}" | awk '{print$'${keyWordPoint}'}' | tr -d '\r\n'\""
+        cat ${checkLog} 
+        result=$(cat ${checkLog} | grep "${keyWord}" | awk '{print$'${keyWordPoint}'}' | tr -d '"' | tr -d '\r\n')
+        if [[ ${result} == *${keyWordGolden}* ]];then
+            echo "The result : ${result} to seek ${keyWordGolden} is same as expect : ${keyWordGolden}"
+            return 0
+        else
+            echo "The result : ${result} to seek ${keyWordGolden} is mismatch with expect : ${keyWordGolden}"
+            return 1
+        fi
+    elif [ ${checkType} == "CheckEGREPFormat" ];then
+        keyWordPoint=$(echo ${PassKeyWord} | awk -F ';' '{print$1}')
+	    keyWordFormat=$(echo ${PassKeyWord} | awk -F ';' '{print$2}')
+        echo "Command : \"cat ${checkLog} | grep "${keyWord}" | awk '{print$'${keyWordPoint}'}' | tr -d '\r\n'\""
+        cat ${checkLog} 
+        result=$(cat ${checkLog} | grep "${keyWord}" | awk '{print$'${keyWordPoint}'}' | tr -d '"' | tr -d '\r\n')
+        if [ $(echo ${result} | egrep ${keyWordFormat} | wc -l) -eq 1 ];then
+            echo "The result format : ${result} for ${keyWordStr} is same as expect : ${keyWordFormat}"
+            return 0
+        else
+            echo "The result format : ${result} for ${keyWordStr} is mismatch with expect : ${keyWordFormat}"
+            return 1
+        fi
+    elif [ ${checkType} == "LogCheck" ];then
+        keyWordPoint=$(echo ${PassKeyWord} | awk -F ';' '{print$1}')
+        keyWordStr=$(echo ${PassKeyWord} | awk -F ';' '{print$2}')
+        echo "Command : \"cat ${checkLog} | grep "${keyWord}" | awk '{print$'${keyWordPoint}'}'\""
+        cat ${checkLog} 
+        result=$(cat ${checkLog} | grep "${keyWord}" | awk '{print$'${keyWordPoint}'}' | tr -d '"' | tr -d '\r\n')
+        if [ ${result} == "${keyWordStr}" ];then
+            echo "The result : ${result} is same as expect : ${keyWordStr}"
+            return 0
+        else
+            echo "The result : ${result} is mismatch with expect : ${keyWordStr}"
+            return 1
+        fi
+    elif [ ${checkType} == "ValueCheck" ];then
+        keyWordStr=$(echo ${PassKeyWord} | awk -F ';' '{print$1}')
+        keyWordPoint=$(echo ${PassKeyWord} | awk -F ';' '{print$2}')
+        keywordJudgePoint=$(echo ${PassKeyWord} | awk -F ';' '{print$3}')
+        echo "Command : \"cat ${checkLog} | grep "${keyWordStr}" | awk '{print$'${keyWordPoint}'}'\""
+        cat ${checkLog} 
+        result=$(cat ${checkLog} | grep "${keyWord}" | awk '{print$3}')
+        if (( $(echo ${result} ${keyWordPoint} ${keywordJudgePoint} | bc -l) ));then
+        #if awk "BEGIN  {exit !(${result} ${keywordJudgePoint} ${keyWordPoint)}";then
+            echo "The compare result : ${result} is pass"
+            return 0
+        else
+            echo "The compare result : ${result} is fail"
+            return 1
+        fi
+    elif [ ${checkType} == "ZeroValueCheck" ];then
+        echo "Command : cat ${checkLog} | grep "${keyWord}" | awk '{print$NF}'"
+        cat ${checkLog} 
+        result=$(cat ${checkLog} | grep "${keyWord}" | awk '{print$NF}' | tr -d '"' | tr -d '\r\n' | wc -l)
+        if [[ "$result" -eq 0 ]]; then
+            echo "The result : ${result} is same as expect is zero value"
+            return 0
+        else
+            echo "The result : ${result} is mismatch with expect should be zero value"
+            return 1
+        fi
+    else
+        echo "Can't get the correct judgement keyword, stop the test"
+        return 1
+    fi
+
+}
+
+executeCMDinMP3DiagOS()
+{
+    echo "Execute DiagOS Command of Minipack2"
+    defaultPassword="0penBmc"
+    user="root"
+    password="11"
+    cmd=$1
+    sw_ip=$2
+/usr/bin/expect << EOF
+    spawn sshpass -p ${defaultPassword} ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR root@${sw_ip}
+    send "sol.sh\r"
+    set timeout 60
+    while 1 {
+        expect {
+        "Password" {
+            send "$password\r"
+            sleep 5
+            continue
+        }
+        "localhost login" {
+        send "${user}\r"
+            sleep 1
+            send "${password}\r"
+            sleep 5
+            continue
+        }
+        "fb971c12 login" {
+            send "${user}\r"
+            sleep 1
+            send "${password}\r"
+            sleep 5
+            continue
+        }
+        "root@fb971c12" {
+            puts "run ${cmd}"
+            sleep 2
+            send "${cmd}\r"
+            sleep 2
+            break
+        }
+        "root@localhost" {
+            break
+        }
+        "BCM.0>" {
+            puts "exit DisagBMCOS"
+            send "exit\r"
+            sleep 2
+            break
+        }
+        "Control-C" {
+            send "\r"
+            sleep 2
+            continue
+        }
+        "Interrupt:SIGINT" {
+	send "\r"
+            sleep 2
+            continue
+        }
+	"minipack3@unidiag" {
+            puts "exit unidiag mode"
+            send "q\r"
+            send "q\r"
+            send "q\r"
+            send "q\r"
+            break
+
+        }
+        "CTRL-l + b : Send Break" {
+            puts "Send Ctrl+C"
+            sleep 2
+            send "\x03\r"
+            sleep 2
+        }
+        timeout {
+            puts "Timeout 300s.Exit"
+            exit
+        }
+        sleep 2
+        }
+    }
+    set timeout 600
+    sleep 3
+    while 1 {
+        send "\r"
+        expect {
+            "root@fb971c12" {
+                puts "command finish."
+                sleep 1
+                exit
+            }
+            "root@localhost" {
+                puts "command finish."
+                sleep 1
+                exit
+            }
+            timeout {
+                puts "Timeout 300s.Exit"
+                exit
+            }
+        }
+        sleep 5
+    }
+EOF
+}
+
+
+get_sel_item()
+{
+        #echo $*
+		sel_sku=
+        num=$1
+        shift
+        i=1
+        until [ -z "$1" ]
+        do
+                if [ $i -eq $num ];then
+                        echo $1
+                        return 0
+                fi
+                let i+=1
+                shift
+        done
+        return 1
+}
+
+
+clear_log()
+{
+	cd $LOGFILE
+	rm -vf *
+	cd $DIAGCAPTOR/log
+	rm -vf *
+	cd $DIAGCAPTOR/ini
+	rm -vf *
+	cd $LSSDT/log
+	rm -vf *
+	cd $LINUXSTRESS/log
+	rm -vf *
+	cd $FOXCONN/flg
+	rm -vf *
+	cd $LINUXMODULE
+	ls | grep -v sh | xargs rm -vf
+
+	cd $FOXCONN
+}

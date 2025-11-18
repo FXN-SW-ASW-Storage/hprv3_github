@@ -1,0 +1,80 @@
+Release Date: 2025-10-09
+Version: 10.0
+1. Add PMM/PSU/BBU check total amount rule 
+2. Modify the WG400 to get NVME ssd info and check strategy
+3. Add PMM/PSU/BBU address check strategy in stardand Device list
+
+Release Date: 2025-08-21
+Version: 9.0
+1. Add Insertion Loss for HPRv3
+
+Release Date: 2025-08-11
+Version: 8.2
+1. Add Bus_Clip_Temp_Pos and Bus_Clip_Temp_Neg sensor check in PSU functional
+testing.
+2. Update AEI PSU with v0009 and Delta PSU/BBU PMM v1.1.4.0
+
+Release Date: 2025-07-31
+Version: 8.1
+1. Add switch serial number into log name to more easily check.
+
+Release Date: 2025-07-17
+Version: 8.0
+1. Add PMM_Standalone, PSU_Standalone, BBU_Standalone before functional test
+on GDL side
+
+Release Date: 2025-06-21
+Version: 7.0
+1. Add Insertion Loss test into HPRv3 test program
+2. Add PSU/BBU PMM can't mixed method into test program
+3. Fix incorrect log format issue
+
+Release Date: 2025-06-06
+Version: 6.0
+1. Update the test program strucuture to enable the parallel running
+
+Release Date: 2025-05-28
+Version: 5.4
+1. Modify all scripts with same log format
+
+Release Date: 2025-05-20
+Version: 5.3
+1. Add MP3 BMC Check function
+2. Modify all scripts' display method to same summary table format
+
+Release Date: 2025-05-16
+Version: 5.2
+1. Fix PRBS31 and Snake Traffic Test can't finish issue
+
+Release Date: 2025-05-14
+Version: 5.1
+1. Update Wedge400 BMC FW to "wedge400-33b5fae6640"
+2. Add PSU functional to check Power input with R-load
+3. Add check rack status trigger function in each script
+
+Release Date: 2025-05-06
+Version: 5.0
+1. Modify all scripts with Megazord test structure
+2. Add MP3 PRBS31 test and Snake Traffic Test
+
+Release Date: 2025-04-18
+Version: 4.0
+1. Modify all scripts with same format and add summary table
+
+Release Date: 2025-04-16
+Version: 3.1
+1. Fine-tune log format with all test script to same format
+
+Release Date: 2025-04-11
+Version: 3.0
+1. Add MP3 switch test script
+
+Release Date: 2025-04-09
+Version: 2.0
+1. Add PSU/BBU PMM standalone code 
+2. Add PSU standalone code
+3. Add PMM/PSU/BBU/AC Loss to add Standalone part
+
+Release Date: 2025-02-04
+Version:1.0.0
+1. First Release on META HPRv3 test program

@@ -1,0 +1,70 @@
+{
+  "rack": {
+    "Json_Version": "800-041487-008",
+    "racksn": "M3253800011",
+    "demandid": "",
+    "assetid": "12512803",
+    "rackipn": "15-102574",
+    "manufacturer": "Foxconn",
+    "location": "GDL",
+    "platform": "HPRv3",
+    "racktype": "NSF",
+    "RUSW_Model": "WEDGE400",
+    "RUSW_Count": "1",
+    "FSW_Model": "MINIPACK3",
+    "FSW_Count": "3",
+    "powershelf_count": "2",
+    "powershelf": {
+      "node": [
+        {
+          "assetid": "2309802187",
+          "serialnumber": "611531ADN01X6O230OE",
+          "partnumber": "204-001400-004",
+          "index": "1"
+        },
+        {
+          "assetid": "2309802530",
+          "serialnumber": "611531ADN01X6O230OC",
+          "partnumber": "204-001400-004",          
+          "index": "2"
+        }
+      ]
+    },
+    "RUSW": {
+      "node": [
+        {          
+          "mac": "88:5A:23:27:FE:3E",
+          "serialnumber": "FH14925310121",
+          "assetid": "",
+          "partnumber": "",
+          "index": "1"
+        }
+      ]
+    },
+    "FSW": {
+      "node": [
+        {          
+          "mac": "D8:49:BF:B2:DE:8D",
+          "serialnumber": "F553225260272",
+          "assetid": "",
+          "partnumber": "",
+          "index": "1"
+        },
+	{
+	  "mac": "D8:49:BF:B0:70:DA",
+	  "serialnumber": "F553225250177",
+          "assetid": "",
+          "partnumber":"",
+          "index": "2"
+        },
+        {
+	  "mac": "D8:49:BF:B0:72:7B",
+ 	  "serialnumber": "F553225250174",
+	  "assetid": "",
+	  "partnumber": "",
+	  "index": "3"
+	}	
+      ]
+    }
+  }
+}

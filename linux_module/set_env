@@ -1,0 +1,17 @@
+#!/usr/bin/expect -f
+
+set fp [open switchip.txt r]
+set switch_ip [read -nonewline $fp]
+set command [lindex $argv 0]
+set time [lindex $argv 1]
+
+close $fp
+spawn ssh -oStrictHostKeyChecking=no root@$switch_ip
+    
+    send "\r"
+    expect "ONIE:~ #"
+    send "$command\r"
+    sleep $time
+    send "exit\r"
+    interact
+

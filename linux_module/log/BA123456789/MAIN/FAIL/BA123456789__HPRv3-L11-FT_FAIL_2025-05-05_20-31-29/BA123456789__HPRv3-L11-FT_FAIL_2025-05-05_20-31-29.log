@@ -1,0 +1,18 @@
+****************************************************
+/opt/HPR_0503/linux_module/log/BA123456789/MAIN/FAIL/BA123456789__HPRv3-L11-FT_FAIL_2025-05-05_20-31-29/BA123456789__HPRv3-L11-FT_FAIL_2025-05-05_20-31-29.log
+****************************************************
+Station Name	: HPRv3
+Code Version	: 
+Start Time		: 
+End Time		: 
+Test Time		: 
+Rack_SN			: BA123456789
+Platform		: 
+IPN Number		: 
+Result			: FAIL
+
+************** Summary Table ***********************
+****************************************************
+HPRv3 Function test
+[31m	get_rackinfo module Test------------------------------------[ FAIL ]
+[0m(B[m 

@@ -1,0 +1,14 @@
+[CONFIGURATION]
+    SERVER_IP = 128.101.1.1
+    USERNAME = sfc
+    PASSWORD = sfc
+    SERVER_SHARE_FOLDER = epdida_fft
+    SERVER_MAC_FOLDER = epdida_fft
+    FOLDER = /home/Project/Station01/
+    MAC_FOLDER = /home/Project/mac/
+    STATION_ID = 123456
+    OPERATOR_ID = A1234567
+    TIMEOUT = 60
+    TIME_CONTRAST_CS = 120
+    DEVICEID = 7012
+

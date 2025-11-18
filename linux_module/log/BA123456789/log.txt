@@ -1,0 +1,3 @@
+HPRv3 Function test
+[31m	get_rackinfo module Test------------------------------------[ FAIL ]
+[0m(B[m 

@@ -1,0 +1,62 @@
+{
+  "rack": {
+    "Json_Version": "800-041487-008",
+    "racksn": "HG244200009",
+    "demandid": "",
+    "assetid": "2309901598",
+    "rackipn": "100-027428-003",
+    "manufacturer": "Foxconn",
+    "location": "GDL",
+    "platform": "Megazord",
+    "RUSW_Model": "WEDGE400",
+    "RUSW_Count": "1",
+    "FSW_Model": "MINIPACK2",
+    "FSW_Count": "2",
+    "powershelf_count": "2",
+    "powershelf": {
+      "node": [
+        {
+          "assetid": "2309802187",
+          "serialnumber": "611531ADN01X6O230OE",
+          "partnumber": "204-001400-004",
+          "index": "1"
+        },
+        {
+          "assetid": "2309802530",
+          "serialnumber": "611531ADN01X6O230OC",
+          "partnumber": "204-001400-004",          
+          "index": "2"
+        }
+      ]
+    },
+    "FSW": {
+      "node": [
+        {          
+          "mac": "dc:da:4d:fc:f1:90",
+          "serialnumber": "F552225060008",
+          "assetid": "",
+          "partnumber": "",
+          "index": "1"
+        },
+        {          
+          "mac": "dc:da:4d:95:a7:20",
+          "serialnumber": "F411324510022",
+          "assetid": "",
+          "partnumber": "",
+          "index": "2"
+        }
+      ]
+    },
+    "RUSW": {
+      "node": [
+        {          
+          "mac": "DC:DA:4D:DD:56:4F",
+          "serialnumber": "FH14725030317",
+          "assetid": "",
+          "partnumber": "",
+          "index": "1"
+        }
+      ]
+    }
+  }
+}

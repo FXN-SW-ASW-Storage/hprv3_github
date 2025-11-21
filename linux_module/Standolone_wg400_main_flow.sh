@@ -40,8 +40,7 @@ while getopts s:i:m:d:f OPT; do
 done
 
 source ../record_time
-echo functional > /opt/HPRv3/log/$SN/execstation.txt
-read
+
 newversion=$(cat ${FOXCONN}/newversion | grep -i "version" | awk -F '=' '{print$2}')
 PROJECT="WG400"
 station=$(cat /home/station.cfg | grep MFG | awk -F '=' '{print$NF}')

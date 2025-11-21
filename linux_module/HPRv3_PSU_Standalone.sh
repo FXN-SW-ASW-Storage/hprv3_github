@@ -118,10 +118,11 @@ PSU_Update_Process()
 
 Normal_HPRv3_PSU_Funtional_test()
 { 
+    PSU_STDARR=("0x90;1" "0x91;2" "0x92;3" "0x93;4" "0x94;5" "0x95;6" "0x9a;7" "0x9b;8" "0x9c;9" "0x9d;10" "0x9e;11" "0x9f;12") 
     HPR_PSU_AddressArr=($(cat ${RackmonLog} | grep -B 1 "ORV3_HPR_PSU" | grep "Device Address" | awk '{print$NF}'))
 
     echo "HPR PSU Address : ${HPR_PSU_AddressArr[@]}"
-	
+	local PMM_ID=""
 	PSU_Array=()
     declare -a ARTESYN_PSU_INFO_ARRAY=("03-100049" "700-037147-0000" "^[0-9]{2}/[0-9]{4}$" "PSU3AEL" "A00" "009")
     #declare -a ARTESYN_PSU_INFO_ARRAY=("03-100049" "700-037147-0000" "[0-5][0-9]/202[4-5]" "PSU3AEL" "A00" "007")
@@ -132,6 +133,25 @@ Normal_HPRv3_PSU_Funtional_test()
         update_status "$SN" "$folder" "$index" "$testitem" "PSU Address Check" 1
         record_time "HPRv3_WG400_PSU_Standalone" start "PSU Address ${address} Check;${address}" "${address}" "NA" "${RackSN}"
         echo "PSU Address : ${address} Check Test"
+
+        for i in "${!PSU_STDARR[@]}"; do
+            IFS=';' read -r addr id <<< "${PSU_STDARR[i]}"
+            if [[ "$addr" == "$input_addr" ]]; then
+                addressFlg=1
+                PMM_ID=${id}
+            fi
+        done
+
+        if [[ ${addressFlg} -eq 1 ]]; then
+            echo "${address} is in PSU_STDARR array, continue the test"
+		else
+            echo "${address} is not in PSU_STDARR array, stop the test and check the cable connection"
+			record_time "HPRv3_WG400_PSU_Standalone" end "PSU_Check;${address}" "${address}" "FAIL" "${RackSN}"
+            record_time "HPRv3_WG400_PSU_Standalone" total "HPRv3_WG400_PSU_Standalone;NA" "NA" "FAIL" "${RackSN}"
+            update_status "$SN" "$folder" "$index" "$testitem" "PSU Address Test" 3
+            return 1
+		fi
+
         exeucte_test "/usr/local/bin/rackmoncli data --dev-addr ${address}" "${wedge400IP}" | tee ${PSULog} 
         logResultCheck "CheckResult" "Device Address;NF" "${address}" "${PSULog}"
         if [ ${PIPESTATUS[0]} -ne 0 ];then
@@ -159,7 +179,7 @@ Normal_HPRv3_PSU_Funtional_test()
                 if [ ${PSUVendor_Full^^} == ${PSUPMMVendor} ];then
                     declare -a PSU_Array=("${ARTESYN_PSU_INFO_ARRAY[@]}")
                 else
-                    echo "The PSU PMM Vendor : ${PSUPMMVendor^^} is not match as the PSU Vendor : ${PSUVendor_Full}, stop the test"
+                    echo "The PSU Vendor : ${PSUPMMVendor^^} is not match as the PSU Vendor : ${PSUVendor_Full}, stop the test"
                     return 1
                 fi
                
@@ -168,7 +188,7 @@ Normal_HPRv3_PSU_Funtional_test()
                 if [ ${PSUVendor_Full^^} == ${PSUPMMVendor} ];then
                     declare -a PSU_Array=("${DELTA_PSU_INFO_ARRAY[@]}")
                 else
-                    echo "The PSU PMM Vendor : ${PSUPMMVendor^^} is not match as the PSU Vendor : ${PSUVendor_Full}, stop the test"
+                    echo "The PSU Vendor : ${PSUPMMVendor^^} is not match as the PSU Vendor : ${PSUVendor_Full}, stop the test"
                     return 1
                 fi
             else
@@ -214,6 +234,22 @@ Normal_HPRv3_PSU_Funtional_test()
                     show_pass_msg "Rack Module Test -- PSU_${address}_Information_Check Test -> ${PSUInfo[$i]}"
                     record_time "HPRv3_WG400_PSU_Standalone" end "PSU_${address}_Information_Check;${PSUInfo[$i]}" "${PSU_Array[$i]}" "PASS" "${RackSN}"
                     update_status "$SN" "$folder" "$index" "$testitem" "PSU Info Check" 2
+                fi
+
+                echo "Double check the serial number with SFC data" 
+                WG400_PSUSN=$(cat ${PSULog} | grep "PSU_MFR_Serial<0x0018>" | awk -F '"' '{print$2}' )
+                SFC_PSUSN=$(cat ${LOGFOLDER}/${SN}_formatted.json | grep -w -A 75 "PSU" | grep -B 3 "\"index\": \"${id}\"" | grep "serialnumber" | awk -F '"' '{print$4}' )
+
+                if [ "${WG400_PSUSN}" == "${SFC_PSUSN}" ];then
+                    show_pass_msg "Rack Module Test -- PSU_${address}_Information_Check Test with SFC -> ${PMMInfo[$i]}"
+                    record_time "HPRv3_WG400_PSU_Standalone" end "PSU_${address}_Information_Check;${PMMInfo[$i]}" "${PMM_Array[$i]}" "PASS" "${RackSN}"
+			        update_status "$SN" "$folder" "$index" "$testitem" "PSU Information Test" 2
+                else
+                    show_fail_msg "Rack Module Test -- PSU_${address}_Information_Check Test with SFC -> ${PMMInfo[$i]}"
+                    record_time "HPRv3_WG400_PSU_Standalone" end "PSU_${address}_Information_Check;${PMMInfo[$i]}" "${PMM_Array[$i]}" "FAIL" "${RackSN}"
+                    record_time "HPRv3_WG400_PSU_Standalone" total "HPRv3_WG400_PSU_Standalone;NA" "NA" "FAIL" "${RackSN}"
+			        update_status "$SN" "$folder" "$index" "$testitem" "PSU Information Test" 3
+                    return 1
                 fi
             elif [ ${PSUInfo[$i]} == "PSU_FW_Revision" ];then                 
                 logResultCheck "LogCheck" "${PSUInfo[$i]}<" "NF;${PSU_Array[$i]}" "${PSULog}"                 

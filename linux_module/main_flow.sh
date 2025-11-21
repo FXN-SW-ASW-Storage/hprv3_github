@@ -47,10 +47,9 @@ station=$(cat /home/station.cfg | grep MFG | awk -F '=' '{print$NF}')
 LOGFILE=${LOGPATH}/${SN}/log.txt
 LOGFOLDER=${LOGPATH}/${SN}
 RackType=""
-echo "$executeStation" > $LOGFOLDER/execstation.txt
 start_time=$(date +"%Y-%m-%dT%H:%M:%S.%6N")
 pxeip=""
-cp ../log/${SN}/${SN}.JSON .
+#cp ../log/${SN}/${SN}.JSON .
 sleep 3
 
 #record_path="${LOGFOLDER}"

@@ -21,6 +21,7 @@ while getopts s:i: OPT; do
                 RackIPN=$(cat ${LOGPATH}/${RackSN}/rackipn.txt)
                 RackAsset=$(cat ${LOGPATH}/${RackSN}/assetid.txt)
                 wedge400IP=$(cat ${LOGPATH}/${RackSN}/RUSW/${switch_index}/mac_ip.txt)
+                wedge400SN=$(cat ${LOGPATH}/${RackSN}/RUSW/${switch_index}/serialnumber.txt)
             ;;
         "i")
                 index=${OPTARG}
@@ -36,26 +37,131 @@ while getopts s:i: OPT; do
     esac
 done
 
+PSU_Update_Process()
+{
+    UpdateAddress=$1
+    PSUType=$2
+    PSUVendor=$3
+    TargetVer=$4
+    echo "Need updated address ${address} with PSU type : ${PSUType} and PSU vendor : ${PSUVendor}"
+
+    PSUImage=$(ls $TOOL/${PSUType}/${PSUVendor}/)
+    if [ ${PSUVendor^^} == "AEL" ] && [ ${PSUType} == "ORV3_HPR_PSU" ];then
+        update_status "$SN" "$folder" "$index" "$testitem" "PSU Update" 1
+        echo "Send the update image to Wedge400"
+        echo "Command : sshpass -p "0penBmc" scp $TOOL/${PSUType}/${PSUVendor}/${PSUImage} ${wedge400IP}:/tmp"
+        sshpass -p "0penBmc" sshpass -p "0penBmc" scp $TOOL/${PSUType}/${PSUVendor}/${PSUImage} ${wedge400IP}:/tmp
+        if [ ${PIPESTATUS[0]} -ne 0 ];then
+            echo "Can't send the update image into Wedge400"
+            show_fail_msg "Rack Module Information Test -- SCP Image"
+            record_time "HPRv3_WG400_PSU" total "HPRv3_WG400_PSU;NA" "NA" "FAIL" "${RackSN}"
+            update_status "$SN" "$folder" "$index" "$testitem" "PSU Update" 3
+            return 1
+        else
+            show_pass_msg "Rack Module Information Test -- SCP Image"
+        fi
+
+        echo "Update command : flock /tmp/modbus_dynamo_solitonbeam.lock /usr/local/bin/psu-update-aei.py --addr ${UpdateAddress} -–device hpr /tmp/${PSUImage}"
+        exeucte_test "flock /tmp/modbus_dynamo_solitonbeam.lock /usr/local/bin/psu-update-aei.py --addr ${UpdateAddress} --device hpr /tmp/${PSUImage}" "${wedge400IP}" | tee ${PSUUpdateLog} 
+        Status=$(cat ${PSUUpdateLog} | grep "Upgrade success" | wc -l)
+        newFWVer=$(cat ${PSUUpdateLog}  | grep -A 4 "Upgrade success" | grep Version | awk -F ':' '{print$2}' | tr -d ' ')
+        if [ ${Status} -eq 1 ];then
+            if [ ${newFWVer} == "$TargetVer" ];then
+                echo "The vendor ${PSUVendor} for ${PSUType} already update to target version ${TargetVer}"
+            else
+                echo "The vendor ${PSUVendor} for ${PSUType} can't update to target version ${TargetVer}, stop the test"
+                update_status "$SN" "$folder" "$index" "$testitem" "PSU Update" 3
+                return 1
+            fi
+        else    
+            echo "The vendor ${PSUVendor} for ${PSUType} can't update to target version ${TargetVer}, stop the test"
+            update_status "$SN" "$folder" "$index" "$testitem" "PSU Update" 3
+            return 1
+        fi
+    elif [ ${PSUVendor^^} == "DELTA" ] && [ ${PSUType} == "ORV3_HPR_PSU" ] ;then
+
+        echo "Send the update image to Wedge400"
+        echo "Command : sshpass -p "0penBmc" scp $TOOL/${PSUType}/${PSUVendor}/${PSUImage} ${wedge400IP}:/tmp"
+        sshpass -p "0penBmc" sshpass -p "0penBmc" scp $TOOL/${PSUType}/${PSUVendor}/${PSUImage} ${wedge400IP}:/tmp
+        if [ ${PIPESTATUS[0]} -ne 0 ];then
+            echo "Can't send the update image into Wedge400"
+            show_fail_msg "Rack Module Information Test -- SCP Image"
+            record_time "HPRv3_WG400_PSU" total "HPRv3_WG400_PSU;NA" "NA" "FAIL" "${RackSN}"
+            return 1
+        else
+            show_pass_msg "Rack Module Information Test -- SCP Image"
+        fi
+
+        echo "Update command : flock /tmp/modbus_dynamo_solitonbeam.lock /usr/local/bin/psu-update-delta-orv3.py --addr ${UpdateAddress} --key 0x06854137C758A5B6 /tmp/${PSUImage}"
+        exeucte_test "flock /tmp/modbus_dynamo_solitonbeam.lock /usr/local/bin/psu-update-delta-orv3.py --addr ${UpdateAddress} --key 0x06854137C758A5B6 /tmp/${PSUImage}" "${wedge400IP}" | tee ${PSUUpdateLog} 
+        Status=$(cat ${PSUUpdateLog} | grep "Upgrade success" | wc -l)
+        newFWVer=$(cat ${PSUUpdateLog}  | grep -A 4 "Upgrade success" | grep Version | awk -F ':' '{print$2}' | tr -d ' ')
+        if [ ${Status} -eq 1 ];then
+            if [ ${newFWVer} == "$TargetVer" ];then
+                echo "The vendor ${PSUVendor} for ${PSUType} already update to target version ${TargetVer}"
+            else
+                echo "The vendor ${PSUVendor} for ${PSUType} can't update to target version ${TargetVer}, stop the test"
+                update_status "$SN" "$folder" "$index" "$testitem" "PSU Update" 3
+                return 1
+            fi
+        else    
+            echo "The vendor ${PSUVendor} for ${PSUType} can't update to target version ${TargetVer}, stop the test"
+            update_status "$SN" "$folder" "$index" "$testitem" "PSU Update" 3
+            return 1
+        fi
+    else
+        echo "Can't get correct PSU vendor or PSU type, stop the test"
+        update_status "$SN" "$folder" "$index" "$testitem" "PSU Update" 3
+        return 1
+    fi
+    update_status "$SN" "$folder" "$index" "$testitem" "PSU Update" 2
+}
+
 Normal_HPRv3_PSU_Funtional_test()
-{ 
+{
+	PSU_STDARR=("0x90;1" "0x91;2" "0x92;3" "0x93;4" "0x94;5" "0x95;6" "0x9a;7" "0x9b;8" "0x9c;9" "0x9d;10" "0x9e;11" "0x9f;12") 
     HPR_PSU_AddressArr=($(cat ${RackmonLog} | grep -B 1 "ORV3_HPR_PSU" | grep "Device Address" | awk '{print$NF}'))
     if [ ${#HPR_PSU_AddressArr[@]} -eq 0 ];then
-	echo "Can't find correct number of PSU, stop the test"
-	record_time "HPRv3_WG400_PSU" end "PSU Address ${address} Check;${address}" "${address}" "FAIL" "${RackSN}"
+        echo "Can't find correct number of PSU, stop the test"
+        record_time "HPRv3_WG400_PSU" end "PSU Address ${address} Check;${address}" "${address}" "FAIL" "${RackSN}"
         record_time "HPRv3_WG400_PSU" total "HPRv3_WG400_PSU;NA" "NA" "FAIL" "${RackSN}"
         update_status "$SN" "$folder" "$index" "$testitem" "PSU Address Check" 3
         return 1
     fi
     echo "HPR PSU Address : ${HPR_PSU_AddressArr[@]}"
 	
+    local PMM_ID=""
 	PSU_Array=()
-    declare -a ARTESYN_PSU_INFO_ARRAY=("03-100049" "700-037147-0000" "^[0-9]{2}/[0-9]{4}$" "PSU3AEL" "A00" "007")
+    declare -a ARTESYN_PSU_INFO_ARRAY=("03-100049" "700-037147-0000" "^[0-9]{2}/[0-9]{4}$" "PSU3AEL" "A00" "009")
     #declare -a ARTESYN_PSU_INFO_ARRAY=("03-100049" "700-037147-0000" "[0-5][0-9]/202[4-5]" "PSU3AEL" "A00" "007")
-    declare -a DELTA_PSU_INFO_ARRAY=("03-100038" "ECD17010021" "^[0-9]{2}/[0-9]{4}$" "P1HPDET" "8" "1.5.1.04111.3213")	
+    declare -a DELTA_PSU_INFO_ARRAY=("03-100038" "ECD17010021" "^[0-9]{2}/[0-9]{4}$" "P1HPDET" "09" "32214112")	
+    #declare -a DELTA_PSU_INFO_ARRAY=("03-100038" "ECD17010021" "^[0-9]{2}/[0-9]{4}$" "P1HPDET" "8" "1.5.1.04111.3213")	
 
     for address in ${HPR_PSU_AddressArr[@]};do
         update_status "$SN" "$folder" "$index" "$testitem" "PSU Address Check" 1
         record_time "HPRv3_WG400_PSU" start "PSU Address ${address} Check;${address}" "${address}" "NA" "${RackSN}"
+
+        echo "PSU Address : ${address} Check Test"
+        for i in "${!PSU_STDARR[@]}"; do
+            IFS=';' read -r addr id <<< "${PSU_STDARR[i]}"
+            if [[ "$addr" == "$input_addr" ]]; then
+                addressFlg=1
+                PMM_ID=${id}
+            fi
+        done
+
+        if [[ ${addressFlg} -eq 1 ]]; then
+            echo "${address} is in PSU_STDARR array, continue the test"
+            record_time "HPRv3_WG400_PSU" end "PSU Address ${address} Check;${address}" "${address}" "PASS" "${RackSN}"
+            update_status "$SN" "$folder" "$index" "$testitem" "PSU AddressCheck" 3
+        else      
+            echo "${address} is not in PSU_STDARR array, stop the test and check the cable connection"
+            record_time "HPRv3_WG400_PSU" end "PSU Address ${address} Check;${address}" "${address}" "FAIL" "${RackSN}"
+            record_time "HPRv3_WG400_PSU" total "HPRv3_WG400_PSU;NA" "NA" "FAIL" "${RackSN}"
+            update_status "$SN" "$folder" "$index" "$testitem" "PSU AddressCheck" 3
+            return 1
+        fi
+        
         echo "PSU Address : ${address} Check Test"
         exeucte_test "/usr/local/bin/rackmoncli data --dev-addr ${address}" "${wedge400IP}" | tee ${PSULog} 
         logResultCheck "CheckResult" "Device Address;NF" "${address}" "${PSULog}"
@@ -76,12 +182,26 @@ Normal_HPRv3_PSU_Funtional_test()
         PSUVendor=$(cat ${PSULog} | grep "PSU_MFR_Serial<" | awk '{print$NF}' | cut -c 10-12)
         exeucte_test "/usr/local/bin/rackmoncli data --dev-addr ${address} --reg-name \"Device Type\"" "${wedge400IP}" | tee ${PSULog}
         PSUType=$(cat ${PSULog} | grep "Device Type:" | awk '{print$NF}')
+        PSUPMMVendor=$(cat ${LOGFOLDER}/PMMVendor.txt)
 
         if [ ${PSUType} == "ORV3_HPR_PSU" ];then
             if [ ${PSUVendor} == "AEL" ];then
-                declare -a PSU_Array=("${ARTESYN_PSU_INFO_ARRAY[@]}")
+                PSUVendor_Full="ARTESYN"
+                if [ ${PSUVendor_Full^^} == ${PSUPMMVendor} ];then
+                    declare -a PSU_Array=("${ARTESYN_PSU_INFO_ARRAY[@]}")
+                else
+                    echo "The PSU PMM Vendor : ${PSUPMMVendor^^} is not match as the PSU Vendor : ${PSUVendor_Full}, stop the test"
+                    return 1
+                fi
+               
             elif [ ${PSUVendor} == "DET" ];then
-                declare -a PSU_Array=("${DELTA_PSU_INFO_ARRAY[@]}")
+                PSUVendor_Full="DELTA"
+                if [ ${PSUVendor_Full^^} == ${PSUPMMVendor} ];then
+                    declare -a PSU_Array=("${DELTA_PSU_INFO_ARRAY[@]}")
+                else
+                    echo "The PSU PMM Vendor : ${PSUPMMVendor^^} is not match as the PSU Vendor : ${PSUVendor_Full}, stop the test"
+                    return 1
+                fi
             else
                 echo "Can't get correct PSU vendor, stop the test"
                 update_status "$SN" "$folder" "$index" "$testitem" "PSU Info Check" 3
@@ -126,6 +246,50 @@ Normal_HPRv3_PSU_Funtional_test()
                     record_time "HPRv3_WG400_PSU" end "PSU_${address}_Information_Check;${PSUInfo[$i]}" "${PSU_Array[$i]}" "PASS" "${RackSN}"
                     update_status "$SN" "$folder" "$index" "$testitem" "PSU Info Check" 2
                 fi
+
+                echo "Double check the serial number with SFC data" 
+                WG400_PSUSN=$(cat ${PSULog} | grep "PSU_MFR_Serial<0x0018>" | awk -F '"' '{print$2}' )
+                SFC_PSUSN=$(cat ${LOGFOLDER}/${SN}_formatted.json | grep -w -A 75 "PSU" | grep -B 3 "\"index\": \"${id}\"" | grep "serialnumber" | awk -F '"' '{print$4}' )
+
+                if [ "${WG400_PSUSN}" == "${SFC_PSUSN}" ];then
+                    show_pass_msg "Rack Module Test -- PSU_${address}_Information_Check Test with SFC -> ${PMMInfo[$i]}"
+                    record_time "HPRv3_WG400_PSU_Standalone" end "PSU_${address}_Information_Check;${PMMInfo[$i]}" "${PMM_Array[$i]}" "PASS" "${RackSN}"
+			        update_status "$SN" "$folder" "$index" "$testitem" "PSU Information Test" 2
+                else
+                    show_fail_msg "Rack Module Test -- PSU_${address}_Information_Check Test with SFC -> ${PMMInfo[$i]}"
+                    record_time "HPRv3_WG400_PSU_Standalone" end "PSU_${address}_Information_Check;${PMMInfo[$i]}" "${PMM_Array[$i]}" "FAIL" "${RackSN}"
+                    record_time "HPRv3_WG400_PSU_Standalone" total "HPRv3_WG400_PSU_Standalone;NA" "NA" "FAIL" "${RackSN}"
+			        update_status "$SN" "$folder" "$index" "$testitem" "PSU Information Test" 3
+                    return 1
+                fi
+            elif [ ${PSUInfo[$i]} == "PSU_FW_Revision" ];then                 
+                logResultCheck "LogCheck" "${PSUInfo[$i]}<" "NF;${PSU_Array[$i]}" "${PSULog}"                 
+                if [ ${PIPESTATUS[0]} -ne 0 ];then                         
+                    show_fail_msg "Rack Module Test -- PSU_${address}_Information_Check Test -> ${PSUInfo[$i]}"                         
+                    record_time "HPRv3_WG400_PSU" end "PSU_${address}_Information_Check;${PSUInfo[$i]}" "${PSU_Array[$i]}" "FAIL" "${RackSN}"                         
+                    echo "Need to update the FW for PSU, continue the update process"
+                    PSU_Update_Process "$address" "$PSUType" "$PSUVendor" "${PSU_Array[$i]}"
+                    if [ ${PIPESTATUS[0]} -eq 0 ];then
+                        echo "The PSU type ${PSUType} for vendor ${PSUVendor} already updated, check the FW again"
+                        exeucte_test "/usr/local/bin/rackmoncli data --dev-addr ${address} --reg-name ${PSUInfo[$i]}" "${wedge400IP}" | tee ${PSULog}
+                        logResultCheck "LogCheck" "${PSUInfo[$i]}<" "NF;${PSU_Array[$i]}" "${PSULog}"
+                        if [ ${PIPESTATUS[0]} -eq 0 ];then
+                            echo "The PSU FW already update to ${PSU_Array[$i]}, continue the test"
+                        else
+                            echo "The PSU FW don't update to ${PSU_Array[$i]}, stop the test"
+                            update_status "$SN" "$folder" "$index" "$testitem" "PSU Info Check" 3
+                            return 1
+                        fi
+                    else
+                        echo "The PSU FW don't update to ${PSU_Array[$i]}, stop the test"
+                        update_status "$SN" "$folder" "$index" "$testitem" "PSU Info Check" 3
+                        return 1
+                    fi
+                else                         
+                    show_pass_msg "Rack Module Test -- PSU_${address}_Information_Check Test -> ${PSUInfo[$i]}"                         
+                    record_time "HPRv3_WG400_PSU" end "PSU_${address}_Information_Check;${PSUInfo[$i]}" "${PSU_Array[$i]}" "PASS" "${RackSN}"      
+                    update_status "$SN" "$folder" "$index" "$testitem" "PSU Info Check" 2           
+                fi 
             else
                 logResultCheck "LogCheck" "${PSUInfo[$i]}<" "NF;${PSU_Array[$i]}" "${PSULog}"
                 if [ ${PIPESTATUS[0]} -ne 0 ];then
@@ -144,62 +308,121 @@ Normal_HPRv3_PSU_Funtional_test()
         
         update_status "$SN" "$folder" "$index" "$testitem" "PSU Function Check" 1
         echo "PSU_Input_Power Check Test on address : ${address}"
-        echo "Check the value is large between 5500 and 6500"
-        record_time "HPRv3_WG400_PSU" start "PSU ${address} Functional Check;PSU_Input_Power" "6500 > Power > 5500" "NA" "${RackSN}"
+        echo "Check the value is large between 4800 and 5700"
+        record_time "HPRv3_WG400_PSU" start "PSU ${address} Functional Check;PSU_Input_Power" "5700 > Power > 4800" "NA" "${RackSN}"
         exeucte_test "/usr/local/bin/rackmoncli data --dev-addr ${address} --reg-name PSU_Input_Power" "${wedge400IP}" | tee ${PSULog}
-        logResultCheck "ValueCheck" "PSU_Input_Power<0x0057>" "NF;>;5500" "${PSULog}"
+        logResultCheck "ValueCheck" "PSU_Input_Power<0x0057>" "NF;>;4800" "${PSULog}"
         if [ ${PIPESTATUS[0]} -eq 0 ];then
-            echo "Check the value is less than 6500"
-            logResultCheck "ValueCheck" "PSU_Input_Power<0x0057>" "NF;<;6500" "${PSULog}"
+            echo "Check the value is less than 5700"
+            logResultCheck "ValueCheck" "PSU_Input_Power<0x0057>" "NF;<;5700" "${PSULog}"
             if [ ${PIPESTATUS[0]} -eq 0 ];then
                 show_pass_msg "Rack Module Information Test -- ${address} PSU_Input_Power"
-                record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;PSU_Input_Power" "6500 > Power > 5500" "PASS" "${RackSN}"
+                record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;PSU_Input_Power" "5700 > Power > 4800" "PASS" "${RackSN}"
                 update_status "$SN" "$folder" "$index" "$testitem" "PSU Function Check" 2
             else
                 show_fail_msg "Rack Module Information Test -- ${address} PSU_Input_Power "
-                record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;PSU_Input_Power" "6500 > Power > 5500" "FAIL" "${RackSN}"
+                record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;PSU_Input_Power" "5700 > Power > 4800" "FAIL" "${RackSN}"
                 record_time "HPRv3_WG400_PSU" total "HPRv3_WG400_PSU;NA" "NA" "FAIL" "${RackSN}"
                 update_status "$SN" "$folder" "$index" "$testitem" "PSU Function Check" 3
                 return 1
             fi
         else
             show_fail_msg "Rack Module Information Test -- ${address} PSU_Input_Power"
-            record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;PSU_Input_Power" "6500 > Power > 5500" "FAIL" "${RackSN}"
+            record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;PSU_Input_Power" "5700 > Power > 4800" "FAIL" "${RackSN}"
             record_time "HPRv3_WG400_PSU" total "HPRv3_WG400_PSU;NA" "NA" "FAIL" "${RackSN}"
             update_status "$SN" "$folder" "$index" "$testitem" "PSU Function Check" 3
             return 1
         fi
 
         echo "PSU_Output_Power Check Test on address : ${address}"
-        echo "Check the value is large than 5000W"        
-	record_time "HPRv3_WG400_PSU" start "PSU ${address} Functional Check;PSU_Output_Power" "5000 < Power < 6000" "NA" "${RackSN}"
+        echo "Check the value is large than 4800W"        
+        record_time "HPRv3_WG400_PSU" start "PSU ${address} Functional Check;PSU_Output_Power" "4800 < Power < 5700" "NA" "${RackSN}"
         exeucte_test "/usr/local/bin/rackmoncli data --dev-addr ${address} --reg-name PSU_Output_Power" "${wedge400IP}" | tee ${PSULog}
         #if [ ${address} == 0x90 ] || [ ${address} == 0x91 ] || [ ${address} == 0x92 ] || [ ${address} == 0x94 ] || [ ${address} == 0x9a ] || [ ${address} == 0x9d ] || [ ${address} == 0x9e ];then
-        logResultCheck "ValueCheck" "PSU_Output_Power<0x0052>" "NF;>;5000" "${PSULog}"
+        logResultCheck "ValueCheck" "PSU_Output_Power<0x0052>" "NF;>;4800" "${PSULog}"
         if [ ${PIPESTATUS[0]} -eq 0 ];then
-            echo "Check the value is less than 6000W"
-            logResultCheck "ValueCheck" "PSU_Output_Power<0x0052>" "NF;<;6000" "${PSULog}"
+            echo "Check the value is less than 5700W"
+            logResultCheck "ValueCheck" "PSU_Output_Power<0x0052>" "NF;<;5700" "${PSULog}"
             if [ ${PIPESTATUS[0]} -eq 0 ];then
                 show_pass_msg "Rack Module Information Test -- ${address} PSU_Output_Power"
-                record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;PSU_Output_Power" "5000 < Power < 6000" "PASS" "${RackSN}"
+                record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;PSU_Output_Power" "4800 < Power < 5700" "PASS" "${RackSN}"
                 update_status "$SN" "$folder" "$index" "$testitem" "PSU Function Check" 2
             else
                 show_fail_msg "Rack Module Information Test -- ${address} PSU_Output_Power"
-                record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;PSU_Output_Power" "5000 < Power < 6000" "FAIL" "${RackSN}"
+                record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;PSU_Output_Power" "4800 < Power < 5700" "FAIL" "${RackSN}"
                 record_time "HPRv3_WG400_PSU" total "HPRv3_WG400_PSU;NA" "NA" "FAIL" "${RackSN}"
                 update_status "$SN" "$folder" "$index" "$testitem" "PSU Function Check" 3
                 return 1
             fi
         else
             show_fail_msg "Rack Module Information Test -- ${address} PSU_Output_Power"
-            record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;PSU_Output_Power" "5000 < Power < 6000" "FAIL" "${RackSN}"
+            record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;PSU_Output_Power" "4800 < Power < 5700" "FAIL" "${RackSN}"
             record_time "HPRv3_WG400_PSU" total "HPRv3_WG400_PSU;NA" "NA" "FAIL" "${RackSN}"
             update_status "$SN" "$folder" "$index" "$testitem" "PSU Function Check" 3
             return 1
         fi
 
+	    if [ ${PSUVendor_Full} == "ARTESYN" ];then
+            echo "Need to check Bus_Clip_Temp_Pos sensor"
+            echo "Bus_Clip_Temp_Pos Check Test on address : ${address}"
+            record_time "HPRv3_WG400_PSU" start "PSU ${address} Functional Check;Bus_Clip_Temp_Pos" "60 < Temperature < 98" "NA" "${RackSN}"
+            exeucte_test "/usr/local/bin/rackmoncli data --dev-addr ${address} --reg-name Bus_Clip_Temp_Pos" "${wedge400IP}" | tee ${PSULog}
+            logResultCheck "ValueCheck" "Bus_Clip_Temp_Pos<0x006f>" "NF;>;60" "${PSULog}"
+            if [ ${PIPESTATUS[0]} -eq 0 ];then
+                echo "Check the value is less than 99"
+                logResultCheck "ValueCheck" "Bus_Clip_Temp_Pos<0x006f>" "NF;<;99" "${PSULog}"
+                if [ ${PIPESTATUS[0]} -eq 0 ];then
+                    show_pass_msg "Rack Module Information Test -- ${address} Bus_Clip_Temp_Pos "
+                    record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;Bus_Clip_Temp_Pos" "60 < Temperature < 99" "PASS" "${RackSN}"		
+                    update_status "$SN" "$folder" "$index" "$testitem" "PSU Function Check" 2
+                else
+                    show_fail_msg "Rack Module Information Test -- ${address} Bus_Clip_Temp_Pos "
+                    record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;Bus_Clip_Temp_Pos" "60 < Temperature < 99" "FAIL" "${RackSN}"
+                    record_time "HPRv3_WG400_PSU" total "HPRv3_WG400_PSU;NA" "NA" "FAIL" "${RackSN}"
+                    update_status "$SN" "$folder" "$index" "$testitem" "PSU Function Check" 3
+                    return 1
+                fi
+            else
+                show_fail_msg "Rack Module Information Test -- ${address} Bus_Clip_Temp_Pos"
+                record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;Bus_Clip_Temp_Pos" "60 < Temperature < 99" "FAIL" "${RackSN}"
+                record_time "HPRv3_WG400_PSU" total "HPRv3_WG400_PSU;NA" "NA" "FAIL" "${RackSN}"
+                update_status "$SN" "$folder" "$index" "$testitem" "PSU Function Check" 3
+                return 1
+            fi
+        else
+            echo "No need to check Bus_Clip_Temp_Pos sensor, skip the process"
+        fi
 
-
+	    if [ ${PSUVendor_Full} == "ARTESYN" ];then
+            echo "Need to check Bus_Clip_Temp_Neg sensor"
+        	echo "Bus_Clip_Temp_Pos Check Test on address : ${address}"
+        	record_time "HPRv3_WG400_PSU" start "PSU ${address} Functional Check;Bus_Clip_Temp_Neg" "60 < Temperature < 99" "NA" "${RackSN}"
+            exeucte_test "/usr/local/bin/rackmoncli data --dev-addr ${address} --reg-name Bus_Clip_Temp_Neg" "${wedge400IP}" | tee ${PSULog}
+        	logResultCheck "ValueCheck" "Bus_Clip_Temp_Neg<0x0070>" "NF;>;60" "${PSULog}"
+        	if [ ${PIPESTATUS[0]} -eq 0 ];then
+                echo "Check the value is less than 99"
+                logResultCheck "ValueCheck" "Bus_Clip_Temp_Neg<0x0070>" "NF;<;99" "${PSULog}"
+                if [ ${PIPESTATUS[0]} -eq 0 ];then
+                    show_pass_msg "Rack Module Information Test -- ${address} Bus_Clip_Temp_Neg "
+                    record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;Bus_Clip_Temp_Neg" "60 < Temperature < 99" "PASS" "${RackSN}"		
+                update_status "$SN" "$folder" "$index" "$testitem" "PSU Function Check" 2
+                else
+                    show_fail_msg "Rack Module Information Test -- ${address} Bus_Clip_Temp_Neg "
+                    record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;Bus_Clip_Temp_Neg" "60 < Temperature < 99" "FAIL" "${RackSN}"
+                    record_time "HPRv3_WG400_PSU" total "HPRv3_WG400_PSU;NA" "NA" "FAIL" "${RackSN}"
+                    update_status "$SN" "$folder" "$index" "$testitem" "PSU Function Check" 3
+                    return 1
+                fi
+        	else
+                show_fail_msg "Rack Module Information Test -- ${address} Bus_Clip_Temp_Neg"
+                record_time "HPRv3_WG400_PSU" end "PSU ${address} Functional Check;Bus_Clip_Temp_Neg" "60 < Temperature < 99" "FAIL" "${RackSN}"
+                record_time "HPRv3_WG400_PSU" total "HPRv3_WG400_PSU;NA" "NA" "FAIL" "${RackSN}"
+                update_status "$SN" "$folder" "$index" "$testitem" "PSU Function Check" 3
+                return 1
+        	fi
+        else
+        	echo "No need to check Bus_Clip_Temp_Neg sensor, skip the process"
+        fi
 
         echo "PSU_Input_Voltage_AC Check Test on address : ${address}"
         echo "Check the value is large than 200"
@@ -255,25 +478,7 @@ Normal_HPRv3_PSU_Funtional_test()
             update_status "$SN" "$folder" "$index" "$testitem" "PSU Function Check" 3
             return 1
         fi
-    #     else   
-	# 	logResultCheck "ValueCheck" "PSU_Output_Power<0x0052>" "NF;>;0" "${PSULog}"
-    #     	if [ ${PIPESTATUS[0]} -eq 0 ];then
-    #         		echo "Check the value is less than 6600W"
-    #         		logResultCheck "ValueCheck" "PSU_Output_Power<0x0052>" "NF;<;6600" "${PSULog}"
-    #         		if [ ${PIPESTATUS[0]} -eq 0 ];then
-    #             		show_pass_msg "Rack Module Information Test -- ${address} PSU_Output_Power"
-	# 			record_time "HPRv3_WG400_PSU" end "PSU Address ${address} PSU_Output_Power Check" "0 < Power < 6600" "PASS" "${RackSN}"
-    #        		else   
-    #            			show_fail_msg "Rack Module Information Test -- ${address} PSU_Output_Power"
-	# 			record_time "HPRv3_WG400_PSU" end "PSU Address ${address} PSU_Output_Power Check" "0 < Power < 6600" "FAIL" "${RackSN}"
-    #             		return 1
-    #         		fi
-	# 	else   
-    #                     show_fail_msg "Rack Module Information Test -- ${address} PSU_Output_Power"
-	# 		record_time "HPRv3_WG400_PSU" end "PSU Address ${address} PSU_Output_Power Check" "0 < Power < 6600" "FAIL" "${RackSN}"
-    #                     return 1
-    #     	fi
-	# fi
+
 
         echo "PSU_Output_Voltage Check Test on address : ${address}"
         echo "Check the value is large than 48V"
@@ -412,8 +617,8 @@ startTime=$(date "+%F_%T" | sed -e "s/-//g" -e "s/://g")
 PSULog=${LOGFOLDER}/PSULog.txt
 RackmonLog=${LOGFOLDER}/RackMonLog.txt
 LOGFILE=${LOGFOLDER}/log.txt
-
-
+PSUUpdateLog=${LOGFOLDER}/PSUUpdate.txt
+folder=RUSW
 show_title_msg "${testitem}" | tee ${LOGFILE}
 START=$(date)
 
@@ -424,9 +629,9 @@ Normal_HPRv3_PSU_Funtional_test | tee -a ${LOGFILE}
 if [ "${PIPESTATUS[0]}" -ne "0" ];then
 	show_error_msg "HPRv3 PSU Function Test" | tee -a ${LOGFILE}
         show_fail | tee -a ${LOGFILE}
-        finalLog=${RackIPN}_${RackSN}_${RackAsset}_HPRv3_${switch_index}_PSUFUNC_FAIL_${startTime}.log
+        finalLog=${RackIPN}_${RackSN}_${RackAsset}_HPRv3_${switch_index}_${wedge400SN}_PSUFUNC_FAIL_${startTime}.log
         record_time "HPRv3_WG400_PSU" show "" "" "" "${RackSN}" | tee -a ${LOGFILE}
-        cat ${LOGPATH}/${RackSN}/summary_table_${station}.conf | tee -a ${LOGFILE}
+        #cat ${LOGPATH}/${RackSN}/summary_table_${station}.conf | tee -a ${LOGFILE}
         cat ${LOGFILE} > ${LOGPATH}/${RackSN}/${finalLog}
         cp ${LOGPATH}/${RackSN}/${finalLog} /log/hprv3 > /dev/null
         exit 1
@@ -434,7 +639,7 @@ fi
 
 echo "HPRv3 PSU Function Test" | tee -a ${LOGFILE}
 show_pass | tee -a ${LOGFILE}
-finalLog=${RackIPN}_${RackSN}_${RackAsset}_HPRv3_${switch_index}_PSUFUNC_PASS_${startTime}.log
+finalLog=${RackIPN}_${RackSN}_${RackAsset}_HPRv3_${switch_index}_${wedge400SN}_PSUFUNC_PASS_${startTime}.log
 record_time "HPRv3_WG400_PSU" total "HPRv3_WG400_PSU;NA" "NA" "PASS" "${RackSN}"
 record_time "HPRv3_WG400_PSU" show "" "" "" "${RackSN}" | tee -a ${LOGFILE}
 #cat ${LOGPATH}/${RackSN}/summary_table_${station}.conf | tee -a ${LOGFILE}

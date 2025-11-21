@@ -2,6 +2,7 @@ Release Date: 2025-11-21
 Version: 11.0
 1. Add auto-login feature
 2. Add CBU related test and also fine-tune the test program structure
+3. Add PSUPMM/BBUPMM/PSU address check and SN check
 
 Release Date: 2025-10-09
 Version: 10.0

@@ -160,7 +160,8 @@ Normal_Wedge400_Gen_Whole_Log()
 
 Normal_HPRv3_PMM_Funtional_test()
 {
-	PSU_PMM_STDARR=("0x20" "0x21")
+	PSU_PMM_STDARR=("0x20;1" "0x21;2")
+    local PMM_ID=""
     HPR_PMM_PSU_AddressArr=($(cat ${RackmonLog} | grep -B 1 "ORV3_HPR_PMM_PSU" | grep "Device Address" | awk '{print$NF}'))
     echo "HPR PSU PMM Address : ${HPR_PMM_PSU_AddressArr[@]}"
     	
@@ -170,7 +171,18 @@ Normal_HPRv3_PMM_Funtional_test()
 	for address in ${HPR_PMM_PSU_AddressArr[@]};do
         update_status "$SN" "$folder" "$index" "$testitem" "PSU PMM Address Test" 1
 		record_time "HPRv3_WG400_PSUPMM" start "PSU_PMM_Check;${address}" "${address}" "NA" "${RackSN}"
-        if [[ " ${PSU_PMM_STDARR[@]} " =~ " $address " ]]; then
+
+        addressFlg=0
+        
+        for i in "${!PSU_PMM_STDARR[@]}"; do
+            IFS=';' read -r addr id <<< "${PSU_PMM_STDARR[i]}"
+            if [[ "$addr" == "$input_addr" ]]; then
+                addressFlg=1
+                PMM_ID=${id}
+            fi
+        done
+ 
+	    if [[ ${addressFlg} -eq 1 ]]; then
             echo "${address} is in PSU_PMM_STDARR array, continue the test"
 		else
             echo "${address} is not in PSU_PMM_STDARR array, stop the test and check the cable connection"
@@ -247,6 +259,24 @@ Normal_HPRv3_PMM_Funtional_test()
 					record_time "HPRv3_WG400_PSUPMM" end "PSU_${address}_PMM_Information_Check;${PMMInfo[$i]}" "${PMM_Array[$i]}" "PASS" "${RackSN}"                 
 					update_status "$SN" "$folder" "$index" "$testitem" "PSU PMM Information Test" 2
 				fi            
+
+                echo "Double check the serial number with SFC data" 
+                WG400PSU_PMMSN=$(cat ${PSUPMMLog} | grep "PMM_MFR_Serial<0x0020>" | awk -F '"' '{print$2}' )
+                SFC_PSUPMMSN=$(cat ${LOGFOLDER}/${SN}_formatted.json | grep -w -A 15 "PSU_PMM" | grep -B 3 "\"index\": \"${id}\"" | grep "serialnumber" | awk -F '"' '{print$4}' )
+
+                if [ "${WG400PSU_PMMSN}" == "${SFC_PSUPMMSN}" ];then
+                    show_pass_msg "Rack Module Test -- PSU_${address}_PMM_Information_Check Test with SFC -> ${PMMInfo[$i]}"
+                    record_time "HPRv3_WG400_PSUPMM" end "PSU_${address}_PMM_Information_Check;${PMMInfo[$i]}" "${PMM_Array[$i]}" "PASS" "${RackSN}"
+			        update_status "$SN" "$folder" "$index" "$testitem" "PSU PMM Information Test" 2
+                else
+                    show_fail_msg "Rack Module Test -- PSU_${address}_PMM_Information_Check Test with SFC -> ${PMMInfo[$i]}"
+                    record_time "HPRv3_WG400_PSUPMM" end "PSU_${address}_PMM_Information_Check;${PMMInfo[$i]}" "${PMM_Array[$i]}" "FAIL" "${RackSN}"
+                    record_time "HPRv3_WG400_PSUPMM" total "HPRv3_WG400_PSUPMM;NA" "NA" "FAIL" "${RackSN}"
+			        update_status "$SN" "$folder" "$index" "$testitem" "PSU PMM Information Test" 3
+                    return 1
+                fi
+
+
             elif [ ${PMMInfo[$i]} == "PMM_FW_Revision" ];then                 
                 logResultCheck "LogCheck" "${PMMInfo[$i]}<" "NF;${PMM_Array[$i]}" "${PSUPMMLog}"                 
                 if [ ${PIPESTATUS[0]} -ne 0 ];then                         

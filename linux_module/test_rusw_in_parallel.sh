@@ -74,15 +74,8 @@ main()
     #echo "chk_list=${chk_list}"
     for loc_id in ${sw_list};
     do
-	station=$(cat ${LOGFOLDER}/execstation.txt)
-	if [ ${station} == "functional" ];then
-        	sw_session_name="${SN}-${folder}-${loc_id}"
-	elif [ ${station} == "standalone" ];then
 		sw_session_name="${SN}-${folder}-${loc_id}"
-	else
-		echo "Can't get correct station, stop the test"
-		exit 1
-	fi
+	
         chk=`tmux ls | grep -c "${sw_session_name}"`
         if [ "${chk}" -ne "0" ]; then
             echo "${sw_session_name} is already alive.Kill the session"

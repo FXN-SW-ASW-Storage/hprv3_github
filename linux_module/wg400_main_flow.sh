@@ -165,17 +165,14 @@ upload_log()
 }
 
 get_test_item(){
-	 execfunction=$(cat $LOGFOLDER/execstation.txt)
-     if [ $execfunction == "standalone" ];then
-     #test_item="chk_fsw_ip mp2_test mp2_initial mp2_prbs31  mp2_snake_traffic mp2_insertion_loss"
-         test_item=" chk_rusw_ip HPRv3_BMC_Function HPRv3_PMM_Standalone HPRv3_PSU_Standalone HPRv3_BBU_Standalone"
-     elif [ $execfunction == "functional" ];then
-     #test_item="chk_fsw_ip mp2_test mp2_initial mp2_prbs31  mp2_snake_traffic mp2_insertion_loss"
-         #test_item="chk_rusw_ip run_wedge400_test"
-        test_item=" chk_rusw_ip HPRv3_WG400BMC_Function run_wedge400_test HPRv3_PMM_Standalone HPRv3_PSU_Standalone HPRv3_BBU_Standalone HPRv3_PSU_Function_Full HPRv3_BBU_Function_Full HPRv3_PMM_Function_Full HPRv3_ACLoss_Function"
+    ProductionPhase=$(cat ${FOXCONN}/newversion | grep "Phase" | awk -F '=' '{print$NF}')
+
+    if [ "${ProductionPhase}" == "MP" ];then
+        test_item="chk_rusw_ip HPRv3_WG400BMC_Function run_wedge400_test HPRv3_PMM_Standalone HPRv3_PSU_Standalone HPRv3_PSU_Function HPRv3_PSUPMM_Function HPRv3_BBUPMM_Function HPRv3_ACLoss_Function"
     else
-        echo "Can't get correct function, stop the test"
+        test_item="chk_rusw_ip HPRv3_WG400BMC_Function run_wedge400_test HPRv3_PMM_Standalone HPRv3_PSU_Standalone HPRv3_BBU_Standalone HPRv3_PSU_Function_Full HPRv3_BBU_Function_Full HPRv3_PMM_Function_Full HPRv3_ACLoss_Function"
     fi
+
 } 
 
 ####################################################

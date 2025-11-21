@@ -141,7 +141,7 @@ Normal_Wedge400_Gen_Whole_Log()
         show_fail_msg "Rack Module Information Test -- Generate Log"
         record_time "HPRv3_WG400_BBUPMM" end "Wedge400_Whole_Log;NA" "1000" "FAIL" "${RackSN}"
         record_time "HPRv3_WG400_BBUPMM" total "HPRv3_WG400_BBUPMM;NA" "NA" "FAIL" "${RackSN}"
-	update_status "$SN" "$folder" "$index" "$testitem" "Get Whole Log Test" 3
+	    update_status "$SN" "$folder" "$index" "$testitem" "Get Whole Log Test" 3
         return 1
     else
         echo "Can generate all rackmoninfo log and the content is more than 1000 line"
@@ -155,17 +155,29 @@ Normal_Wedge400_Gen_Whole_Log()
 
 Normal_HPRv3_PMM_Funtional_test()
 {
-	BBU_PMM_STDARR=("0x10" "0x11" "0x12" "0x13" "0x14")
+	BBU_PMM_STDARR=("0x10;1" "0x11;2" "0x12;3" "0x13;4" "0x14;5")
+    local PMM_ID=""
     HPR_PMM_BBU_AddressArr=($(cat ${RackmonLog} | grep -B 1 "ORV3_HPR_PMM_BBU" | grep "Device Address" | awk '{print$NF}'))
     echo "HPR BBU PMM Address : ${HPR_PMM_BBU_AddressArr[@]}"
     
 	declare -a PANA_BBUPMM_Data_Array=("03-100048" "BJ-BPM102A;0001" "^[0-9]{2}/[0-9]{4}$" "M1V4PAM" "M01" "00.01.1F")
     declare -a DELTA_BBUPMM_Data_Array=("03-100037" "ECD90000111" "^[0-9]{2}/[0-9]{4}$" "M2HPDET" "05" "1140")
-
+    local BBUCount=1
 	for address in ${HPR_PMM_BBU_AddressArr[@]};do
+
         update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM Address Test" 1
         record_time "HPRv3_WG400_BBUPMM" start "BBU_PMM_Check;${address}" "${address}" "NA" "${RackSN}"
-	    if [[ " ${BBU_PMM_STDARR[@]} " =~ " $address " ]]; then
+        addressFlg=0
+        
+        for i in "${!BBU_PMM_STDARR[@]}"; do
+            IFS=';' read -r addr id <<< "${BBU_PMM_STDARR[i]}"
+            if [[ "$addr" == "$input_addr" ]]; then
+                addressFlg=1
+                PMM_ID=${id}
+            fi
+        done
+ 
+	    if [[ ${addressFlg} -eq 1 ]]; then
             echo "${address} is in BBU_PMM_STDARR array, continue the test"
             record_time "HPRv3_WG400_BBUPMM" end "BBU_PMM_Check;${address}" "${address}" "PASS" "${RackSN}"
         else      
@@ -245,8 +257,24 @@ Normal_HPRv3_PMM_Funtional_test()
                 else
                     show_pass_msg "Rack Module Test -- BBU_${address}_PMM_Information_Check Test -> ${PMMInfo[$i]}"
                     record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_Information_Check;${PMMInfo[$i]}" "${PMM_Array[$i]}" "PASS" "${RackSN}"
-			        update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM Information Test" 2
                 fi
+
+                echo "Double check the serial number with SFC data" 
+                WG400BBU_PMMSN=$(cat ${BBUPMMLog} | grep "PMM_MFR_Serial<0x0020>" | awk -F '"' '{print$2}' )
+                SFC_BBUPMMSN=$(cat ${LOGFOLDER}/${SN}_formatted.json | grep -w -A 38 "BBU_PMM" | grep -w -A 38 "BBU_PMM" | grep -B 3 "\"index\": \"${PMM_ID}\"" | grep "serialnumber" | awk -F '"' '{print$4}' )
+
+                if [ "${WG400BBU_PMMSN}" == "${SFC_BBUPMMSN}" ];then
+                    show_pass_msg "Rack Module Test -- BBU_${address}_PMM_Information_Check Test with SFC -> ${PMMInfo[$i]}"
+                    record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_Information_Check;${PMMInfo[$i]}" "${PMM_Array[$i]}" "PASS" "${RackSN}"
+			        update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM Information Test" 2
+                else
+                    show_fail_msg "Rack Module Test -- BBU_${address}_PMM_Information_Check Test with SFC -> ${PMMInfo[$i]}"
+                    record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_Information_Check;${PMMInfo[$i]}" "${PMM_Array[$i]}" "FAIL" "${RackSN}"
+                    record_time "HPRv3_WG400_BBUPMM" total "HPRv3_WG400_BBUPMM;NA" "NA" "FAIL" "${RackSN}"
+			        update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM Information Test" 3
+                    return 1
+                fi
+
             elif [ ${PMMInfo[$i]} == "PMM_MFR_Model" ];then
                 if [ ${PMMVendor} == "Panasonic" ];then
                     totalPassWord_Str1=$(echo ${PMM_Array[$i]} | awk -F ';' '{print$1}' |tr -d '[,]')
@@ -304,54 +332,31 @@ Normal_HPRv3_PMM_Funtional_test()
             fi
         done
 
-	    # update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM ISHARE Test" 1
-        # echo "ISHARE Cable Connection Test on Address : ${address}"
-        # record_time "HPRv3_WG400_BBUPMM" start "BBU_${address}_PMM_ISHARE_Check;${address}" "0" "NA" "${RackSN}"
-        # exeucte_test "/usr/local/bin/rackmoncli data --dev-addr ${address} --reg-name ISHARE_Cable_Connected" "${wedge400IP}" | tee ${BBUPMMLog}
-        # if [ ${address} == "0x10" ];then
-        #     logResultCheck "CheckResult" "ISHARE_Cable_Connected<0x0056>;NF" "0" "${BBUPMMLog}"
-        #     if [ ${PIPESTATUS[0]} -ne 0 ];then
-        #         show_fail_msg "Rack Module Information Test -- ISHARE Cable Connection -- Address ${address} "
-        #         record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_ISHARE_Check;${address}" "0" "FAIL" "${RackSN}"
-        #         record_time "HPRv3_WG400_BBUPMM" total "HPRv3_WG400_BBUPMM;NA" "NA" "FAIL" "${RackSN}"
-		# 	    update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM ISHARE Test" 3
-        #         return 1
-        #     else
-        #         show_pass_msg "Rack Module Information Test -- ISHARE Cable Connection -- Address ${address} "
-        #         record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_ISHARE_Check;${address}" "0" "PASS" "${RackSN}"
-		#         update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM ISHARE Test" 2
-        #     fi
-        # else
-        #     logResultCheck "CheckResult" "ISHARE_Cable_Connected<0x0056>;NF" "1" "${BBUPMMLog}"
-        #     if [ ${PIPESTATUS[0]} -ne 0 ];then
-        #         show_fail_msg "Rack Module Information Test -- ISHARE Cable Connection -- Address ${address} "
-        #         record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_ISHARE_Check;${address}" "1" "FAIL" "${RackSN}"
-        #         record_time "HPRv3_WG400_BBUPMM" total "HPRv3_WG400_BBUPMM;NA" "NA" "FAIL" "${RackSN}"
-		#         update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM ISHARE Test" 3
-        #         return 1
-        #     else
-        #         show_pass_msg "Rack Module Information Test -- ISHARE Cable Connection -- Address ${address} "
-        #         record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_ISHARE_Check;${address}" "0" "PASS" "${RackSN}"
-		#         update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM ISHARE Test" 2
-        #     fi
-        # fi
-
 	    update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM Present Test" 1
         echo "6 BBU PMM Module Present for address : ${address}" 
         BBUPresent=("Module1_Present" "Module2_Present" "Module3_Present" "Module4_Present" "Module5_Present" "Module6_Present")
+        ProductionPhase=$(cat ${FOXCONN}/newversion | grep "Phase" | awk -F '=' '{print$NF}')
+        local ModuleExist=""
+        if [ "${ProductionPhase}" == "MP" ];then
+            ModuleExist="[0]"
+        else
+            ModuleExist="[1]"
+        fi
+
         exeucte_test "/usr/local/bin/rackmoncli data --dev-addr ${address} --reg-name Module_Present" "${wedge400IP}" | tee ${BBUPMMLog}
         for BBU in "${BBUPresent[@]}"; do
-            record_time "HPRv3_WG400_BBUPMM" start "BBU_${address}_PMM_Present_Check;${address}" "[1]" "NA" "${RackSN}"	
-            logResultCheck "LogCheck" "${BBU}" "1;[1]" "${BBUPMMLog}"
+            
+            record_time "HPRv3_WG400_BBUPMM" start "BBU_${address}_PMM_Present_Check;${address}" "${ModuleExist}" "NA" "${RackSN}"	
+            logResultCheck "LogCheck" "${BBU}" "1;${ModuleExist}" "${BBUPMMLog}"
             if [ ${PIPESTATUS[0]} -ne 0 ];then
                 show_fail_msg "Rack Module Test -- BBU ${BBU} PMM Present Test"
-                record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_Present_Check;${address}" "[1]" "FAIL" "${RackSN}"
+                record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_Present_Check;${address}" "${ModuleExist}" "FAIL" "${RackSN}"
                 record_time "HPRv3_WG400_BBUPMM" total "HPRv3_WG400_BBUPMM;NA" "NA" "FAIL" "${RackSN}"
 		        update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM Present Test" 3
                 return 1
             else
                 show_pass_msg "Rack Module Test -- BBU ${BBU} PMM Present Test"
-                record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_Present_Check;${address}" "[1]" "PASS" "${RackSN}"
+                record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_Present_Check;${address}" "${ModuleExist}" "PASS" "${RackSN}"
 		        update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM Present Test" 2
             fi
         done
@@ -380,21 +385,46 @@ Normal_HPRv3_PMM_Funtional_test()
         echo "General_Alarm_Status_Register Test for address : ${address}"
         Register=("Missing_Modules" "Shelf_EEPROM_Fault" "Module_Modbus_Communication_Error" "PMM_Modbus_Communication_Error" "Serial_Link_Fault" "Module_Alerts")
         exeucte_test "/usr/local/bin/rackmoncli data --dev-addr ${address} --reg-name General_Alarm_Status_Register" "${wedge400IP}" | tee ${BBUPMMLog}
-        for Reg in "${Register[@]}"; do
-        record_time "HPRv3_WG400_BBUPMM" start "BBU_${address}_PMM_General_Alarm_Status_Register;${Reg}" "[0]" "NA" "${RackSN}"
-        logResultCheck "LogCheck" "${Reg}" "1;[0]" "${BBUPMMLog}"
-        if [ ${PIPESTATUS[0]} -ne 0 ];then
-            show_fail_msg "Rack Module Test -- General_Alarm_Status_Register Test -- ${Reg}"
-            record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_General_Alarm_Status_Register;${Reg}" "[0]" "FAIL" "${RackSN}"
-            record_time "HPRv3_WG400_BBUPMM" total "HPRv3_WG400_BBUPMM;NA" "NA" "FAIL" "${RackSN}"
-		    update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM General_Alarm_Status_Register Test" 3
-            return 1
+        ProductionPhase=$(cat ${FOXCONN}/newversion | grep "Phase" | awk -F '=' '{print$NF}')
+        local MissingFlg=""
+        if [ "${ProductionPhase}" == "MP" ];then
+            MissingFlg="[1]"
         else
-            show_pass_msg "Rack Module Test -- General_Alarm_Status_Register Test -- ${Reg}"
-            record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_General_Alarm_Status_Register;${Reg}" "[0]" "PASS" "${RackSN}"
-		    update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM General_Alarm_Status_Register Test" 2
+            MissingFlg="[0]"
+        fi
+
+        for Reg in "${Register[@]}"; do
+            if [ ${Register[$i]} == "Missing_Modules" ];then
+                record_time "HPRv3_WG400_BBUPMM" start "BBU_${address}_PMM_General_Alarm_Status_Register;${Reg}" "${MissingFlg}" "NA" "${RackSN}"
+                logResultCheck "LogCheck" "${Reg}" "1;${MissingFlg}" "${BBUPMMLog}"
+                if [ ${PIPESTATUS[0]} -ne 0 ];then
+                    show_fail_msg "Rack Module Test -- General_Alarm_Status_Register Test -- ${Reg}"
+                    record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_General_Alarm_Status_Register;${Reg}" "${MissingFlg}" "FAIL" "${RackSN}"
+                    record_time "HPRv3_WG400_BBUPMM" total "HPRv3_WG400_BBUPMM;NA" "NA" "FAIL" "${RackSN}"
+                    update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM General_Alarm_Status_Register Test" 3
+                    return 1
+                else
+                    show_pass_msg "Rack Module Test -- General_Alarm_Status_Register Test -- ${Reg}"
+                    record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_General_Alarm_Status_Register;${Reg}" "${MissingFlg}" "PASS" "${RackSN}"
+                    update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM General_Alarm_Status_Register Test" 2
+                    fi
+                done
+            else
+                record_time "HPRv3_WG400_BBUPMM" start "BBU_${address}_PMM_General_Alarm_Status_Register;${Reg}" "[0]" "NA" "${RackSN}"
+                logResultCheck "LogCheck" "${Reg}" "1;[0]" "${BBUPMMLog}"
+                if [ ${PIPESTATUS[0]} -ne 0 ];then
+                    show_fail_msg "Rack Module Test -- General_Alarm_Status_Register Test -- ${Reg}"
+                    record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_General_Alarm_Status_Register;${Reg}" "[0]" "FAIL" "${RackSN}"
+                    record_time "HPRv3_WG400_BBUPMM" total "HPRv3_WG400_BBUPMM;NA" "NA" "FAIL" "${RackSN}"
+                    update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM General_Alarm_Status_Register Test" 3
+                    return 1
+                else
+                    show_pass_msg "Rack Module Test -- General_Alarm_Status_Register Test -- ${Reg}"
+                    record_time "HPRv3_WG400_BBUPMM" end "BBU_${address}_PMM_General_Alarm_Status_Register;${Reg}" "[0]" "PASS" "${RackSN}"
+                    update_status "$SN" "$folder" "$index" "$testitem" "BBU PMM General_Alarm_Status_Register Test" 2
+                    fi
+                done
             fi
-        done
     done
 }
 

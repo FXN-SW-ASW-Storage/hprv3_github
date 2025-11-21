@@ -104,7 +104,7 @@ main()
     	    show_pass_msg "Split FSW data from JSON file"
     	fi
     else
-	echo "Current Rack Type : ${rackType} and it doesn't contains FSW"
+    echo "Current Rack Type : ${rackType} and it doesn't contains FSW"
     fi
     RUSW_Count=`cat ${LOGFOLDER}/RUSW_Count.txt`
     RUSW_count=`jq '.rack.RUSW.node|length' ${JSONFILE}`

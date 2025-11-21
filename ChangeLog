@@ -1,3 +1,21 @@
+Release Date: 2025-11-21
+Version: 11.0
+1. Add auto-login feature
+2. Add CBU related test and also fine-tune the test program structure
+
+Release Date: 2025-10-09
+Version: 10.0
+1. Add PMM/PSU/BBU check total amount rule 
+2. Modify the WG400 to get NVME ssd info and check strategy
+3. Add PMM/PSU/BBU address check strategy in stardand Device list
+
+Release Date: 2025-08-21
+Version: 9.0
+1. Add Insertion Loss for HPRv3
+
+Release Date: 2025-08-11
+Version: 8.2
+1. Add Bus_Clip_Temp_Pos and Bus_Clip_Temp_Neg sensor check in PSU functional
 Release Date: 2025-10-09
 Version: 10.0
 1. Add PMM/PSU/BBU check total amount rule 
@@ -51,7 +69,6 @@ Version: 5.1
 1. Update Wedge400 BMC FW to "wedge400-33b5fae6640"
 2. Add PSU functional to check Power input with R-load
 3. Add check rack status trigger function in each script
-
 Release Date: 2025-05-06
 Version: 5.0
 1. Modify all scripts with Megazord test structure
